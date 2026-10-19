@@ -1,0 +1,192 @@
+import type { Project, PullRequestState, Run } from "../types";
+import { getSettings } from "../db";
+import { PHASES } from "../constants";
+
+interface GitHubConfig {
+  token: string;
+  owner: string;
+  repo: string;
+}
+
+async function githubConfig(): Promise<GitHubConfig | undefined> {
+  const settings = await getSettings();
+  if (!settings.githubToken || !settings.githubOwner || !settings.githubRepo) return undefined;
+  return {
+    token: settings.githubToken,
+    owner: settings.githubOwner,
+    repo: settings.githubRepo,
+  };
+}
+
+async function githubRequest<T>(
+  config: GitHubConfig,
+  pathname: string,
+  init: RequestInit = {},
+): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
+  const res = await fetch(`https://api.github.com${pathname}`, {
+    ...init,
+    headers: {
+      authorization: `Bearer ${config.token}`,
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "content-type": "application/json",
+      "user-agent": "software-factory-local",
+      ...(init.headers ?? {}),
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const text = await res.text();
+  let data: T | undefined;
+  try {
+    data = text ? (JSON.parse(text) as T) : undefined;
+  } catch {
+    // GitHub can return empty bodies
+  }
+  return {
+    ok: res.ok,
+    status: res.status,
+    data,
+    error: res.ok ? undefined : text.slice(0, 800),
+  };
+}
+
+export async function ensureGitHubRepo(): Promise<{
+  ok: boolean;
+  created: boolean;
+  config?: GitHubConfig;
+  error?: string;
+}> {
+  const settings = await getSettings();
+  const config = await githubConfig();
+  if (!config) {
+    return { ok: false, created: false, error: "GitHub token, owner and repo are not configured." };
+  }
+  const existing = await githubRequest(config, `/repos/${config.owner}/${config.repo}`);
+  if (existing.ok) return { ok: true, created: false, config };
+  if (existing.status !== 404) {
+    return { ok: false, created: false, config, error: existing.error };
+  }
+  if (!settings.githubCreateRepo) {
+    return {
+      ok: false,
+      created: false,
+      config,
+      error: `Repository ${config.owner}/${config.repo} does not exist and auto-create is disabled.`,
+    };
+  }
+  const created = await githubRequest<{ full_name?: string }>(config, "/user/repos", {
+    method: "POST",
+    body: JSON.stringify({
+      name: config.repo,
+      private: true,
+      auto_init: false,
+      description: "Build by Software Factory",
+    }),
+  });
+  if (!created.ok) {
+    return { ok: false, created: false, config, error: created.error };
+  }
+  return { ok: true, created: true, config };
+}
+
+export async function createPullRequest(
+  config: GitHubConfig,
+  options: {
+    title: string;
+    head: string;
+    base: string;
+    body: string;
+  },
+): Promise<PullRequestState> {
+  const response = await githubRequest<{
+    html_url?: string;
+    number?: number;
+    title?: string;
+  }>(config, `/repos/${config.owner}/${config.repo}/pulls`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: options.title,
+      head: options.head,
+      base: options.base,
+      body: options.body,
+      maintainer_can_modify: true,
+    }),
+  });
+
+  if (response.ok && response.data) {
+    return {
+      url: response.data.html_url,
+      number: response.data.number,
+      title: response.data.title,
+      status: "created",
+    };
+  }
+
+  // An open PR may already exist for this branch; return it rather than failing the run.
+  const existing = await githubRequest<
+    Array<{ html_url?: string; number?: number; title?: string }>
+  >(
+    config,
+    `/repos/${config.owner}/${config.repo}/pulls?head=${encodeURIComponent(
+      `${config.owner}:${options.head}`,
+    )}&state=open`,
+  );
+  if (existing.ok && existing.data?.length) {
+    const pr = existing.data[0];
+    return {
+      url: pr.html_url,
+      number: pr.number,
+      title: pr.title,
+      status: "created",
+    };
+  }
+  return {
+    status: "failed",
+    error: response.error ?? `GitHub returned ${response.status}`,
+  };
+}
+
+export function buildPullRequestBody(
+  run: Run,
+  project: Project,
+  testSummary: string,
+): string {
+  const phaseLines = run.phases
+    .map((phase) => {
+      const state = phase.status === "passed" ? "✅" : phase.status === "failed" ? "❌" : "⚠️";
+      return `- ${state} **${PHASES.find((item) => item.id === phase.id)?.name ?? phase.name}** — ${phase.artifacts.join(", ") || "no artifacts"}`;
+    })
+    .join("\n");
+  const heals = run.phases.reduce((sum, phase) => sum + phase.healAttempts.length, 0);
+  return `## What was built
+
+${run.prompt}
+
+## SDLC pipeline
+
+${phaseLines}
+
+## Verification
+
+${testSummary}
+
+- Self-healing attempts: **${heals}**
+- Files produced: **${run.artifacts.fileTree.length}**
+- Workspace stack: **${project.stack}**
+
+## Agent summary
+
+${run.artifacts.summary ?? "Generated by the Software Factory autonomous pipeline."}
+
+---
+
+_This pull request was prepared by Software Factory. Agents: ${Array.from(
+    new Set(run.phases.map((phase) => phase.agentId).filter(Boolean)),
+  )
+    .map((id) => `\`${id}\``)
+    .join(", ")}. Review generated code before merging._`;
+}
+
+export async function getGitHubConfig(): Promise<GitHubConfig | undefined> {
+  return githubConfig();
+}
