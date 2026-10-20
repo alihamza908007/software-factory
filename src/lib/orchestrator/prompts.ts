@@ -215,6 +215,7 @@ export function handoffPrompt(
   fromAgent: string,
   originalPrompt: string,
   previousOutput: string,
+  correction?: string,
 ): ProviderMessage[] {
   return messages(
     agent,
@@ -226,7 +227,7 @@ ${originalPrompt}
 ${fromAgent.toUpperCase()} OUTPUT:
 ${previousOutput}
 
-Continue the work from your role. Be concise. If you produce artifacts, use complete fenced files with path= info strings. If nothing remains for your role, state that clearly and stop.`,
+${correction ? `SUPERVISOR CORRECTION (address this before proceeding):\n${correction}\n\n` : ""}Continue the work from your role. Be concise. If you produce artifacts, use complete fenced files with path= info strings. If nothing remains for your role, state that clearly and stop.`,
   );
 }
 

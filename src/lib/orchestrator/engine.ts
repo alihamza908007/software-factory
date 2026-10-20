@@ -13,8 +13,14 @@ import {
 import { createPhases, PHASES } from "../constants";
 import { runEvents } from "../events";
 import { generateWithAgent } from "../providers/router";
+import {
+  correctiveInstruction,
+  DeadLoopException,
+  validateAgentHandoff,
+} from "./guardrails";
 import type {
   Agent,
+  GuardrailResult,
   HealAttempt,
   PhaseId,
   Project,
@@ -129,6 +135,38 @@ async function logPhase(
     const phase = run.phases.find((item) => item.id === phaseId);
     if (phase) runEvents.publish(runId, { type: "phase", runId, phase });
   }
+}
+
+async function guardHandoff(
+  runId: string,
+  phaseId: PhaseId,
+  source: Agent,
+  target: Agent,
+  payload: string,
+  stage: string,
+): Promise<GuardrailResult> {
+  const result = await validateAgentHandoff({
+    sourceAgent: source,
+    targetAgent: target,
+    payload,
+    traceKey: runId,
+    stage,
+  });
+  await logPhase(
+    runId,
+    phaseId,
+    result.passed ? "success" : "warn",
+    `Guardrail ${result.score}/100 · ${source.name} → ${target.name}${result.passed ? " passed" : " needs correction"}.`,
+    result.checks
+      .map((check) => `[${check.level}] ${check.label}: ${check.detail} (${check.score} pts)`)
+      .join("\n"),
+  );
+  runEvents.publish(runId, { type: "guardrail", runId, result });
+  if (result.deadLoop.detected) {
+    runEvents.publish(runId, { type: "dead_loop", runId, deadLoop: result.deadLoop });
+    throw new DeadLoopException(result.deadLoop);
+  }
+  return result;
 }
 
 async function setPhase(
@@ -330,10 +368,11 @@ async function generateFiles(
   root: string,
   messages: Parameters<typeof generateWithAgent>[0]["messages"],
   purpose: string,
-  options?: { testFiles?: boolean },
+  options?: { testFiles?: boolean; guardrailTarget?: Agent; guardrailStage?: string },
 ): Promise<{ files: ParsedFile[]; raw: string; outcome: Awaited<ReturnType<typeof generateWithAgent>> }> {
+  const settings = await getSettings();
   await logPhase(runId, phaseId, "agent", `${agent.name} (${agent.role}) is generating…`);
-  const outcome = await generateWithAgent({
+  let outcome = await generateWithAgent({
     agent,
     messages,
     purpose,
@@ -352,6 +391,52 @@ async function generateFiles(
       1,
     )} tok/s · TTFT ${Math.round(outcome.result.ttftMs)}ms`,
   );
+
+  let verdict: GuardrailResult | undefined;
+  if (options?.guardrailTarget) {
+    verdict = await guardHandoff(
+      runId,
+      phaseId,
+      agent,
+      options.guardrailTarget,
+      outcome.result.text,
+      options.guardrailStage ?? purpose,
+    );
+    let retry = 0;
+    while (!verdict.passed && retry < settings.guardrailMaxRetries) {
+      retry += 1;
+      await logPhase(
+        runId,
+        phaseId,
+        "warn",
+        `Guardrail corrective retry ${retry}/${settings.guardrailMaxRetries} for ${agent.name}.`,
+        correctiveInstruction(verdict),
+      );
+      outcome = await generateWithAgent({
+        agent,
+        messages: [
+          ...messages,
+          { role: "user", content: correctiveInstruction(verdict) },
+        ],
+        purpose: `${purpose} · guardrail repair ${retry}`,
+        runId,
+        projectDir: root,
+        priority: phaseId === "implementation" ? 9 : 8,
+        onStatus: (status) => {
+          void logPhase(runId, phaseId, status.stage === "fallback" ? "warn" : "info", status.message);
+        },
+      });
+      verdict = await guardHandoff(
+        runId,
+        phaseId,
+        agent,
+        options.guardrailTarget,
+        outcome.result.text,
+        options.guardrailStage ?? purpose,
+      );
+    }
+  }
+
   let files = parseFileBlocks(outcome.result.text);
   if (options?.testFiles && files.length) {
     files = normalizeTestFiles(files, project.stack);
@@ -379,6 +464,10 @@ async function processImplementation(
     root,
     prompt,
     "implementation",
+    {
+      guardrailTarget: agents.testing,
+      guardrailStage: "implementation",
+    },
   );
 
   if (!generated.files.length) {
@@ -403,6 +492,10 @@ async function processImplementation(
         },
       ],
       "implementation retry",
+      {
+        guardrailTarget: agents.testing,
+        guardrailStage: "implementation",
+      },
     );
   }
 
@@ -476,7 +569,11 @@ async function processTesting(
     root,
     testPrompt(qa, project, project.description, spec, architecture, tree, codeContext),
     "test authoring",
-    { testFiles: true },
+    {
+      testFiles: true,
+      guardrailTarget: agents.implementation,
+      guardrailStage: "testing",
+    },
   );
 
   if (testGen.files.length) {
@@ -538,6 +635,10 @@ async function processTesting(
       root,
       healPrompt(developer, project, spec, failure, currentCode, attempt),
       `self-heal ${attempt}`,
+      {
+        guardrailTarget: qa,
+        guardrailStage: "testing",
+      },
     );
 
     const applied = heal.files.length ? await applyFileBlocks(root, heal.files) : { written: [], errors: [] };
@@ -840,7 +941,47 @@ async function executeRun(runId: string) {
         void logPhase(runId, "requirements", status.stage === "fallback" ? "warn" : "info", status.message);
       },
     });
-    const spec = specOutcome.result.text;
+    let spec = specOutcome.result.text;
+    let specGuard = await guardHandoff(
+      runId,
+      "requirements",
+      pm,
+      agents.architecture ?? pm,
+      spec,
+      "requirements",
+    );
+    let specRetry = 0;
+    while (!specGuard.passed && specRetry < settings.guardrailMaxRetries) {
+      specRetry += 1;
+      await logPhase(
+        runId,
+        "requirements",
+        "warn",
+        `Guardrail corrective retry ${specRetry}/${settings.guardrailMaxRetries} for ${pm.name}.`,
+        correctiveInstruction(specGuard),
+      );
+      const repaired = await generateWithAgent({
+        agent: pm,
+        messages: [
+          ...specPrompt(pm, project, project.description),
+          { role: "user", content: correctiveInstruction(specGuard) },
+        ],
+        purpose: `requirements specification · guardrail repair ${specRetry}`,
+        runId,
+        projectDir: root,
+        priority: 8,
+        signal: controller.signal,
+      });
+      spec = repaired.result.text;
+      specGuard = await guardHandoff(
+        runId,
+        "requirements",
+        pm,
+        agents.architecture ?? pm,
+        spec,
+        "requirements",
+      );
+    }
     await writeProjectFile(root, "docs/SPEC.md", spec);
     await addArtifact(runId, "docs/SPEC.md");
     await setPhase(runId, "requirements", {
@@ -879,7 +1020,47 @@ async function executeRun(runId: string) {
         void logPhase(runId, "architecture", status.stage === "fallback" ? "warn" : "info", status.message);
       },
     });
-    const architecture = archOutcome.result.text;
+    let architecture = archOutcome.result.text;
+    let archGuard = await guardHandoff(
+      runId,
+      "architecture",
+      architect,
+      agents.implementation ?? architect,
+      architecture,
+      "architecture",
+    );
+    let archRetry = 0;
+    while (!archGuard.passed && archRetry < settings.guardrailMaxRetries) {
+      archRetry += 1;
+      await logPhase(
+        runId,
+        "architecture",
+        "warn",
+        `Guardrail corrective retry ${archRetry}/${settings.guardrailMaxRetries} for ${architect.name}.`,
+        correctiveInstruction(archGuard),
+      );
+      const repaired = await generateWithAgent({
+        agent: architect,
+        messages: [
+          ...architecturePrompt(architect, project, project.description, spec),
+          { role: "user", content: correctiveInstruction(archGuard) },
+        ],
+        purpose: `architecture plan · guardrail repair ${archRetry}`,
+        runId,
+        projectDir: root,
+        priority: 7,
+        signal: controller.signal,
+      });
+      architecture = repaired.result.text;
+      archGuard = await guardHandoff(
+        runId,
+        "architecture",
+        architect,
+        agents.implementation ?? architect,
+        architecture,
+        "architecture",
+      );
+    }
     await writeProjectFile(root, "docs/ARCHITECTURE.md", architecture);
     await addArtifact(runId, "docs/ARCHITECTURE.md");
     await setPhase(runId, "architecture", {

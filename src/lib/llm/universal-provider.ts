@@ -19,6 +19,8 @@ export interface ModelRequest {
   maxTokens?: number;
   stream?: boolean;
   jsonMode?: boolean;
+  responseSchema?: Record<string, unknown>;
+  responseSchemaName?: string;
   signal?: AbortSignal;
   baseUrl?: string;
   apiKey?: string;
@@ -169,6 +171,18 @@ async function callOpenAiCompatible(
     stream: request.stream !== false,
   };
   if (request.jsonMode && request.provider !== "lmstudio") {
+    body.response_format = request.responseSchema
+      ? {
+          type: "json_schema",
+          json_schema: {
+            name: request.responseSchemaName ?? "factory_result",
+            strict: true,
+            schema: request.responseSchema,
+          },
+        }
+      : { type: "json_object" };
+  } else if (request.jsonMode && request.provider === "lmstudio") {
+    // LM Studio varies by runner; json_object is the broadest compatible mode.
     body.response_format = { type: "json_object" };
   }
 
@@ -261,11 +275,16 @@ async function callAnthropic(
   if (!apiKey) throw new Error("Anthropic API key is not configured. Add it in Settings → Providers.");
 
   const system =
-    request.system ??
-    request.messages
-      .filter((message) => message.role === "system")
-      .map((message) => message.content)
-      .join("\n\n");
+    (request.system ??
+      request.messages
+        .filter((message) => message.role === "system")
+        .map((message) => message.content)
+        .join("\n\n")) +
+    (request.jsonMode && request.responseSchema
+      ? `\n\nReturn only valid JSON that conforms exactly to this JSON Schema:\n${JSON.stringify(
+          request.responseSchema,
+        )}`
+      : "");
   const messages = request.messages
     .filter((message) => message.role !== "system")
     .map((message) => ({
@@ -388,6 +407,9 @@ async function callGemini(
         temperature: request.temperature ?? 0.2,
         maxOutputTokens: request.maxTokens ?? 4096,
         ...(request.jsonMode ? { responseMimeType: "application/json" } : {}),
+        ...(request.jsonMode && request.responseSchema
+          ? { responseSchema: request.responseSchema }
+          : {}),
       },
     }),
     signal: request.signal ?? AbortSignal.timeout(request.timeoutMs ?? 8 * 60_000),

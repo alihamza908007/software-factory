@@ -39,7 +39,7 @@ export function ModelSelect({
           <SelectGroup>
             <SelectLabel>
               <span className="inline-flex items-center gap-1.5">
-                <Cpu className="h-3 w-3" /> Local · Ollama
+                <Cpu className="h-3 w-3" /> Local · Ollama / LM Studio
               </span>
             </SelectLabel>
             {local.map((model) => (
@@ -47,7 +47,7 @@ export function ModelSelect({
                 <span className="flex w-full items-center gap-2">
                   <span className="max-w-[240px] truncate">{model.name}</span>
                   <span className="ml-auto font-mono text-[9px] text-muted-foreground">
-                    {model.parameterSize ? `${model.parameterSize} · ` : ""}
+                    {model.provider} · {model.parameterSize ? `${model.parameterSize} · ` : ""}
                     {formatMB(model.vramEstimateMB)}
                     {model.heavy ? " · heavy" : ""}
                   </span>
@@ -60,7 +60,7 @@ export function ModelSelect({
           <SelectGroup>
             <SelectLabel>
               <span className="inline-flex items-center gap-1.5">
-                <Cloud className="h-3 w-3" /> Cloud · OpenCode
+                <Cloud className="h-3 w-3" /> Cloud · OpenCode / OpenRouter / Anthropic / OpenAI / Gemini
               </span>
             </SelectLabel>
             {cloud.map((model) => (
@@ -68,7 +68,7 @@ export function ModelSelect({
                 <span className="flex w-full items-center gap-2">
                   <span className="max-w-[240px] truncate">{model.name}</span>
                   <span className="ml-auto font-mono text-[9px] text-muted-foreground">
-                    {model.zeroCost ? "free" : `$${model.costInputPerMTok}/M`}
+                    {model.provider} · {model.zeroCost ? "free" : `$${model.costInputPerMTok}/M`}
                   </span>
                 </span>
               </SelectItem>

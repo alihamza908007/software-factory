@@ -68,31 +68,35 @@ class ResourceQueueManager {
 
   private canRun(reservation: ResourceReservation): boolean {
     // Cloud providers do not consume local unified memory.
-    if (reservation.provider !== "ollama") return true;
+    if (reservation.provider !== "ollama" && reservation.provider !== "lmstudio") return true;
     const used = Array.from(this.running.values()).reduce((sum, item) => sum + item.vramMB, 0);
-    const settingsPromise = getSettings();
-    // Synchronous approximation using the latest known budget; snapshot refreshes from settings.
     const budget = this.lastBudgetMB ?? 36_864;
     const heavyRunning = Array.from(this.running.values()).filter((item) => item.heavy).length;
+    const lightRunning = Array.from(this.running.values()).filter(
+      (item) => !item.heavy && (item.provider === "ollama" || item.provider === "lmstudio"),
+    ).length;
     const maxHeavy = this.lastMaxHeavy ?? 1;
+    const maxLight = this.lastMaxLight ?? 2;
     const allowConcurrentLight = this.lastAllowConcurrentLight ?? true;
 
     if (reservation.heavy && heavyRunning >= maxHeavy) return false;
-    if (!reservation.heavy && heavyRunning > 0 && !allowConcurrentLight) return false;
+    if (!reservation.heavy && !allowConcurrentLight && (heavyRunning > 0 || lightRunning > 0)) return false;
+    if (!reservation.heavy && lightRunning >= maxLight) return false;
     if (!reservation.heavy && reservation.vramMB + used > budget) return false;
     if (reservation.heavy && reservation.vramMB + used > budget) return false;
-    void settingsPromise;
     return true;
   }
 
   private lastBudgetMB?: number;
   private lastMaxHeavy?: number;
+  private lastMaxLight?: number;
   private lastAllowConcurrentLight?: boolean;
 
   async refreshPolicy() {
     const settings = await getSettings();
     this.lastBudgetMB = Math.max(1024, settings.vramBudgetMB - settings.reserveMB);
     this.lastMaxHeavy = settings.maxConcurrentHeavy;
+    this.lastMaxLight = settings.maxConcurrentLight;
     this.lastAllowConcurrentLight = settings.allowConcurrentLight;
   }
 
@@ -102,7 +106,7 @@ class ResourceQueueManager {
     const canFallback = fallback && fallback.key !== options.model.key;
 
     // Cloud models bypass the VRAM queue entirely.
-    if (options.model.provider !== "ollama") {
+    if (options.model.provider !== "ollama" && options.model.provider !== "lmstudio") {
       const reservation = makeReservation(options, options.model);
       reservation.status = "running";
       reservation.startedAt = Date.now();
@@ -119,7 +123,7 @@ class ResourceQueueManager {
     // If the model can never fit inside the configured budget, fall back immediately
     // rather than making the user wait for an impossible reservation.
     const fitsAtAll = options.model.vramEstimateMB <= (this.lastBudgetMB ?? 28_672);
-    if (canFallback && fallback.provider !== "ollama" && !fitsAtAll) {
+    if (canFallback && fallback.provider !== "ollama" && fallback.provider !== "lmstudio" && !fitsAtAll) {
       const reservation = makeReservation(
         options,
         fallback,
@@ -141,7 +145,12 @@ class ResourceQueueManager {
       waiter.timer = setTimeout(async () => {
         this.queue = this.queue.filter((item) => item !== waiter);
         const current = await getSettings();
-        if (current.allowCloudFallback && fallback && fallback.provider !== "ollama") {
+        if (
+          current.allowCloudFallback &&
+          fallback &&
+          fallback.provider !== "ollama" &&
+          fallback.provider !== "lmstudio"
+        ) {
           const fallbackReservation = makeReservation(
             options,
             fallback,

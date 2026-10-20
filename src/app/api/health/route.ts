@@ -29,11 +29,16 @@ export async function GET() {
   try {
     const settings = await getSettings();
     const started = Date.now();
-    const [ollama, opencode, catalogue, resources, freeMemoryMB] = await Promise.all([
+    const [ollama, lmstudio, opencode, catalogue, resources, freeMemoryMB] = await Promise.all([
       fetch(`${settings.ollamaUrl.replace(/\/$/, "")}/api/version`, {
         signal: AbortSignal.timeout(1500),
       })
         .then(async (res) => (res.ok ? ((await res.json()) as { version?: string }) : null))
+        .catch(() => null),
+      fetch(`${settings.lmstudioUrl.replace(/\/+$/, "")}/models`, {
+        signal: AbortSignal.timeout(1500),
+      })
+        .then(async (res) => (res.ok ? ((await res.json()) as { data?: unknown[] }) : null))
         .catch(() => null),
       opencodeFetch("/api/info", {}, 1500)
         .then(async (res) => (res.ok ? ((await res.json()) as { version?: string }) : null))
@@ -43,9 +48,14 @@ export async function GET() {
       availableMemoryMB(),
     ]);
     return json({
-      ok: Boolean(ollama),
+      ok: Boolean(ollama || lmstudio || opencode),
       latencyMs: Date.now() - started,
       ollama: { online: Boolean(ollama), version: ollama?.version, url: settings.ollamaUrl },
+      lmstudio: {
+        online: Boolean(lmstudio),
+        models: lmstudio?.data?.length ?? 0,
+        url: settings.lmstudioUrl,
+      },
       opencode: {
         online: Boolean(opencode),
         version: opencode?.version,

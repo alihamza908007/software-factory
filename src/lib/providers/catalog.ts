@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { getSettings } from "../db";
-import type { ModelInfo } from "../types";
+import type { FactorySettings, ModelInfo, ModelProvider } from "../types";
 
 const execFileAsync = promisify(execFile);
 
@@ -39,6 +39,90 @@ export const STATIC_CLOUD_MODELS: Array<{
   { id: "beam-free", name: "Beam Free", context: 1_048_576 },
   { id: "space-bunny-free", name: "Space Bunny Free", context: 1_000_000 },
 ];
+
+export const STATIC_UNIVERSAL_MODELS: Array<{
+  provider: Exclude<ModelProvider, "ollama" | "opencode" | "lmstudio">;
+  id: string;
+  name: string;
+  context: number;
+  input: number;
+  output: number;
+}> = [
+  { provider: "openrouter", id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4 (OpenRouter)", context: 200_000, input: 3, output: 15 },
+  { provider: "openrouter", id: "openai/gpt-4.1-mini", name: "GPT-4.1 mini (OpenRouter)", context: 1_000_000, input: 0.4, output: 1.6 },
+  { provider: "openrouter", id: "google/gemini-2.5-flash", name: "Gemini 2.5 Flash (OpenRouter)", context: 1_000_000, input: 0.3, output: 2.5 },
+  { provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", context: 200_000, input: 3, output: 15 },
+  { provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5", context: 200_000, input: 1, output: 5 },
+  { provider: "openai", id: "gpt-4.1", name: "GPT-4.1", context: 1_000_000, input: 2, output: 8 },
+  { provider: "openai", id: "gpt-4.1-mini", name: "GPT-4.1 mini", context: 1_000_000, input: 0.4, output: 1.6 },
+  { provider: "google", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", context: 1_000_000, input: 0.3, output: 2.5 },
+  { provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", context: 1_000_000, input: 1.25, output: 10 },
+];
+
+function providerKey(settings: FactorySettings, provider: ModelProvider): string {
+  if (provider === "openrouter") return settings.openrouterApiKey;
+  if (provider === "anthropic") return settings.anthropicApiKey;
+  if (provider === "openai") return settings.openaiApiKey;
+  if (provider === "google") return settings.geminiApiKey;
+  return "";
+}
+
+function mapUniversalModel(
+  raw: (typeof STATIC_UNIVERSAL_MODELS)[number],
+  settings: FactorySettings,
+): ModelInfo {
+  const configured = Boolean(providerKey(settings, raw.provider));
+  return {
+    key: `${raw.provider}/${raw.id}`,
+    provider: raw.provider,
+    modelId: raw.id,
+    name: raw.name,
+    kind: "cloud",
+    contextLength: raw.context,
+    capabilities: ["completion", "tools"],
+    heavy: false,
+    vramEstimateMB: 0,
+    costInputPerMTok: raw.input,
+    costOutputPerMTok: raw.output,
+    zeroCost: raw.input === 0 && raw.output === 0,
+    source: raw.provider,
+    online: configured,
+  };
+}
+
+function mapLmStudioModel(raw: { id: string }, online: boolean): ModelInfo {
+  return {
+    key: `lmstudio/${raw.id}`,
+    provider: "lmstudio",
+    modelId: raw.id,
+    name: raw.id,
+    kind: "local",
+    capabilities: ["completion"],
+    heavy: /(?:12|13|14|20|27|30|32|34|70)b/i.test(raw.id),
+    vramEstimateMB: 12_000,
+    costInputPerMTok: 0,
+    costOutputPerMTok: 0,
+    zeroCost: true,
+    source: "lmstudio",
+    online,
+  };
+}
+
+async function fetchLmStudio(settings: FactorySettings): Promise<ModelInfo[]> {
+  try {
+    const res = await fetch(`${settings.lmstudioUrl.replace(/\/+$/, "")}/models`, {
+      signal: AbortSignal.timeout(2500),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`LM Studio HTTP ${res.status}`);
+    const payload = (await res.json()) as { data?: Array<{ id?: string }> };
+    return (payload.data ?? [])
+      .filter((model): model is { id: string } => Boolean(model.id))
+      .map((model) => mapLmStudioModel(model, true));
+  } catch {
+    return [];
+  }
+}
 
 function estimateVramMB(sizeBytes?: number): number {
   if (!sizeBytes) return 0;
@@ -226,8 +310,14 @@ export async function listModels(force = false): Promise<Cache> {
   const cached = globalStore.__factoryModelCache;
   if (!force && cached && Date.now() - cached.at < CACHE_MS) return cached;
 
-  const [ollama, opencode] = await Promise.all([fetchOllamaModels(), fetchOpenCodeModels()]);
-  const models = [...ollama.models, ...opencode.models];
+  const settings = await getSettings();
+  const [ollama, opencode, lmstudio] = await Promise.all([
+    fetchOllamaModels(),
+    fetchOpenCodeModels(),
+    fetchLmStudio(settings),
+  ]);
+  const universal = STATIC_UNIVERSAL_MODELS.map((model) => mapUniversalModel(model, settings));
+  const models = [...ollama.models, ...lmstudio, ...opencode.models, ...universal];
   const cache: Cache = {
     at: Date.now(),
     models,
@@ -268,6 +358,50 @@ export async function getModel(key: string): Promise<ModelInfo | undefined> {
       source: "static",
       online: false,
     };
+  }
+  if (key.startsWith("lmstudio/")) {
+    return {
+      key,
+      provider: "lmstudio",
+      modelId: key.slice("lmstudio/".length),
+      name: key.slice("lmstudio/".length),
+      kind: "local",
+      capabilities: ["completion"],
+      heavy: false,
+      vramEstimateMB: 8_000,
+      costInputPerMTok: 0,
+      costOutputPerMTok: 0,
+      zeroCost: true,
+      source: "static",
+      online: false,
+    };
+  }
+  const slash = key.indexOf("/");
+  if (slash > 0) {
+    const provider = key.slice(0, slash) as ModelProvider;
+    const modelId = key.slice(slash + 1);
+    const known = STATIC_UNIVERSAL_MODELS.find(
+      (model) => model.provider === provider && model.id === modelId,
+    );
+    if (known) return mapUniversalModel(known, await getSettings());
+    if (["openrouter", "anthropic", "openai", "google"].includes(provider)) {
+      return {
+        key,
+        provider,
+        modelId,
+        name: modelId,
+        kind: "cloud",
+        contextLength: 200_000,
+        capabilities: ["completion"],
+        heavy: false,
+        vramEstimateMB: 0,
+        costInputPerMTok: 0,
+        costOutputPerMTok: 0,
+        zeroCost: false,
+        source: "static",
+        online: false,
+      };
+    }
   }
   return undefined;
 }

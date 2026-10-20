@@ -11,8 +11,12 @@ export function ProviderIcon({
   provider: string;
   className?: string;
 }) {
-  if (provider === "ollama") return <Cpu className={cn("h-3 w-3", className)} />;
-  if (provider === "opencode") return <Cloud className={cn("h-3 w-3", className)} />;
+  if (provider === "ollama" || provider === "lmstudio") {
+    return <Cpu className={cn("h-3 w-3", className)} />;
+  }
+  if (provider === "opencode" || provider === "openrouter" || provider === "anthropic") {
+    return <Cloud className={cn("h-3 w-3", className)} />;
+  }
   return <Server className={cn("h-3 w-3", className)} />;
 }
 
@@ -29,7 +33,7 @@ export function ModelBadge({
 }) {
   const provider = model?.provider ?? (modelKey.split("/")[0] as ModelInfo["provider"]);
   const name = model?.name ?? modelKey.split("/").slice(1).join("/");
-  const isLocal = provider === "ollama";
+  const isLocal = provider === "ollama" || provider === "lmstudio";
   return (
     <span
       className={cn(

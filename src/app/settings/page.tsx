@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFactory } from "@/lib/store";
-import type { FactorySettings } from "@/lib/types";
+import type { FactorySettings, ProviderHealth } from "@/lib/types";
 import { cn, formatMB } from "@/lib/utils";
 import { PageHeader, SectionLabel } from "@/components/shared/page-header";
 import { Metric } from "@/components/shared/metric";
@@ -42,7 +42,27 @@ import { Separator } from "@/components/ui/separator";
 type SettingsState = FactorySettings & {
   hasOpencodePassword?: boolean;
   hasGithubToken?: boolean;
+  hasOpenrouterApiKey?: boolean;
+  hasAnthropicApiKey?: boolean;
+  hasOpenaiApiKey?: boolean;
+  hasGeminiApiKey?: boolean;
 };
+
+type ApiKeyName = "openrouter" | "anthropic" | "openai" | "gemini";
+
+const API_KEY_FIELDS: Array<{
+  name: ApiKeyName;
+  label: string;
+  provider: "openrouter" | "anthropic" | "openai" | "google";
+  placeholder: string;
+  hasKey: keyof SettingsState;
+  clearKey: string;
+}> = [
+  { name: "openrouter", label: "OpenRouter", provider: "openrouter", placeholder: "sk-or-v1-…", hasKey: "hasOpenrouterApiKey", clearKey: "clearOpenrouterApiKey" },
+  { name: "anthropic", label: "Anthropic", provider: "anthropic", placeholder: "sk-ant-…", hasKey: "hasAnthropicApiKey", clearKey: "clearAnthropicApiKey" },
+  { name: "openai", label: "OpenAI", provider: "openai", placeholder: "sk-proj-…", hasKey: "hasOpenaiApiKey", clearKey: "clearOpenaiApiKey" },
+  { name: "gemini", label: "Google Gemini", provider: "google", placeholder: "AIza…", hasKey: "hasGeminiApiKey", clearKey: "clearGeminiApiKey" },
+];
 
 export default function SettingsPage() {
   const {
@@ -63,15 +83,47 @@ export default function SettingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [opencodePassword, setOpencodePassword] = useState("");
   const [githubToken, setGithubToken] = useState("");
-
-  useEffect(() => {
-    if (settings && !draft) setDraft(settings);
-  }, [settings, draft]);
+  const [apiKeys, setApiKeys] = useState<Record<ApiKeyName, string>>({
+    openrouter: "",
+    anthropic: "",
+    openai: "",
+    gemini: "",
+  });
+  const [providers, setProviders] = useState<ProviderHealth[]>([]);
 
   useEffect(() => {
     if (!draft && settings) setDraft(settings);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem("factory:provider-keys");
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<Record<ApiKeyName, string>>;
+        setApiKeys((current) => ({
+          openrouter: parsed.openrouter ?? current.openrouter,
+          anthropic: parsed.anthropic ?? current.anthropic,
+          openai: parsed.openai ?? current.openai,
+          gemini: parsed.gemini ?? current.gemini,
+        }));
+      }
+    } catch {
+      // ignore malformed local cache
+    }
+    void loadProviders();
+  }, []);
+
+  async function loadProviders() {
+    try {
+      const res = await fetch("/api/providers", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { providers: ProviderHealth[] };
+      setProviders(data.providers);
+    } catch {
+      // provider health is non-critical
+    }
+  }
 
   function set<K extends keyof SettingsState>(key: K, value: SettingsState[K]) {
     setDraft((prev) => (prev ? { ...prev, [key]: value } : prev));
@@ -83,10 +135,12 @@ export default function SettingsPage() {
     try {
       const payload: Record<string, unknown> = {
         ollamaUrl: draft.ollamaUrl,
+        lmstudioUrl: draft.lmstudioUrl,
         opencodeUrl: draft.opencodeUrl,
         vramBudgetMB: draft.vramBudgetMB,
         reserveMB: draft.reserveMB,
         maxConcurrentHeavy: draft.maxConcurrentHeavy,
+        maxConcurrentLight: draft.maxConcurrentLight,
         allowConcurrentLight: draft.allowConcurrentLight,
         allowCloudFallback: draft.allowCloudFallback,
         vramQueueTimeoutMs: draft.vramQueueTimeoutMs,
@@ -104,9 +158,17 @@ export default function SettingsPage() {
         defaultAgentId: draft.defaultAgentId,
         autoHandoff: draft.autoHandoff,
         maxHandoffDepth: draft.maxHandoffDepth,
+        guardrailThreshold: draft.guardrailThreshold,
+        guardrailMaxRetries: draft.guardrailMaxRetries,
+        deadLoopWindow: draft.deadLoopWindow,
+        deadLoopThreshold: draft.deadLoopThreshold,
       };
       if (opencodePassword.trim()) payload.opencodePassword = opencodePassword.trim();
       if (githubToken.trim()) payload.githubToken = githubToken.trim();
+      for (const field of API_KEY_FIELDS) {
+        const value = apiKeys[field.name].trim();
+        if (value) payload[`${field.name}ApiKey`] = value;
+      }
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "content-type": "application/json" },
@@ -114,10 +176,28 @@ export default function SettingsPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not save settings.");
-      setDraft({ ...data.settings, hasOpencodePassword: data.settings.hasOpencodePassword ?? Boolean(draft.hasOpencodePassword || opencodePassword), hasGithubToken: data.settings.hasGithubToken ?? Boolean(draft.hasGithubToken || githubToken) });
+      setDraft({
+        ...data.settings,
+        hasOpencodePassword:
+          data.settings.hasOpencodePassword ?? Boolean(draft.hasOpencodePassword || opencodePassword),
+        hasGithubToken: data.settings.hasGithubToken ?? Boolean(draft.hasGithubToken || githubToken),
+        hasOpenrouterApiKey:
+          data.settings.hasOpenrouterApiKey ?? Boolean(draft.hasOpenrouterApiKey || apiKeys.openrouter),
+        hasAnthropicApiKey:
+          data.settings.hasAnthropicApiKey ?? Boolean(draft.hasAnthropicApiKey || apiKeys.anthropic),
+        hasOpenaiApiKey:
+          data.settings.hasOpenaiApiKey ?? Boolean(draft.hasOpenaiApiKey || apiKeys.openai),
+        hasGeminiApiKey:
+          data.settings.hasGeminiApiKey ?? Boolean(draft.hasGeminiApiKey || apiKeys.gemini),
+      });
+      try {
+        window.localStorage.setItem("factory:provider-keys", JSON.stringify(apiKeys));
+      } catch {
+        // localStorage can be disabled
+      }
       setOpencodePassword("");
       setGithubToken("");
-      await Promise.all([fetchSettings(), fetchModels(true), fetchHealth(), fetchResources()]);
+      await Promise.all([fetchSettings(), fetchModels(true), fetchHealth(), fetchResources(), loadProviders()]);
       toast.success("Settings saved", { description: "The queue manager and model catalog are refreshed." });
     } catch (error) {
       toast.error(String(error));
@@ -136,8 +216,45 @@ export default function SettingsPage() {
         ),
       });
       if (!res.ok) throw new Error((await res.json()).error);
+      setDraft((current) =>
+        current
+          ? {
+              ...current,
+              ...(field === "opencode"
+                ? { hasOpencodePassword: false }
+                : { hasGithubToken: false }),
+            }
+          : current,
+      );
       await fetchSettings();
       toast.success(field === "opencode" ? "OpenCode password cleared." : "GitHub token cleared.");
+    } catch (error) {
+      toast.error(String(error));
+    }
+  }
+
+  async function clearApiKey(field: (typeof API_KEY_FIELDS)[number]) {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ [field.clearKey]: true }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      setApiKeys((current) => ({ ...current, [field.name]: "" }));
+      setDraft((current) =>
+        current ? { ...current, [field.hasKey]: false } : current,
+      );
+      try {
+        const raw = window.localStorage.getItem("factory:provider-keys");
+        const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+        delete parsed[field.name];
+        window.localStorage.setItem("factory:provider-keys", JSON.stringify(parsed));
+      } catch {
+        // ignore
+      }
+      await Promise.all([fetchSettings(), fetchModels(true), loadProviders()]);
+      toast.success(`${field.label} key cleared.`);
     } catch (error) {
       toast.error(String(error));
     }
@@ -146,11 +263,15 @@ export default function SettingsPage() {
   async function testConnections() {
     setTesting(true);
     try {
-      await fetchHealth();
+      await Promise.all([fetchHealth(), loadProviders()]);
       const res = await fetch("/api/health", { cache: "no-store" });
       const data = await res.json();
-      toast[data.ollama.online ? "success" : "error"]("Provider probe complete", {
-        description: `Ollama ${data.ollama.online ? "online" : "offline"} · OpenCode ${data.opencode.online ? "online" : "offline"} · ${data.models.local} local / ${data.models.cloud} cloud models`,
+      toast[data.ok ? "success" : "error"]("Provider probe complete", {
+        description: `Ollama ${data.ollama?.online ? "online" : "offline"} · LM Studio ${
+          data.lmstudio?.online ? "online" : "offline"
+        } · OpenCode ${data.opencode?.online ? "online" : "offline"} · ${
+          data.models?.local ?? 0
+        } local / ${data.models?.cloud ?? 0} cloud models`,
       });
     } catch (error) {
       toast.error(String(error));
@@ -257,6 +378,20 @@ export default function SettingsPage() {
                 />
                 <p className="text-[10px] text-muted-foreground">
                   1 is the safe default for a single 27B model on 48 GB. Raising this is an explicit concurrency override.
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Max concurrent light models</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="4"
+                  value={draft.maxConcurrentLight}
+                  onChange={(event) => set("maxConcurrentLight", Number(event.target.value))}
+                  className="font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Models at or below 8B may run up to this many streams. Heavy models are always gated separately.
                 </p>
               </div>
               <div className="grid gap-1.5">
@@ -375,7 +510,98 @@ export default function SettingsPage() {
                   Cloud agents use stateless OpenCode sessions. Free-tier models are routed through the local OpenCode service.
                 </p>
               </div>
+
+              <div className="rounded-lg border border-border/60 bg-black/20 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2 text-xs font-medium">
+                    <Server className="h-3.5 w-3.5 text-factory-lime" /> LM Studio
+                  </span>
+                  <Badge
+                    variant={
+                      providers.find((provider) => provider.provider === "lmstudio")?.online
+                        ? "success"
+                        : "outline"
+                    }
+                  >
+                    {providers.find((provider) => provider.provider === "lmstudio")?.online
+                      ? "online"
+                      : "offline / not configured"}
+                  </Badge>
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>OpenAI-compatible base URL</Label>
+                  <Input
+                    value={draft.lmstudioUrl}
+                    onChange={(event) => set("lmstudioUrl", event.target.value)}
+                    className="font-mono text-xs"
+                    placeholder="http://127.0.0.1:1234/v1"
+                  />
+                </div>
+                <p className="mt-2 font-mono text-[9px] text-muted-foreground">
+                  Local models are discovered from /models and execute through the same VRAM queue as Ollama.
+                </p>
+              </div>
             </div>
+          </section>
+
+          <section className="panel p-4">
+            <SectionLabel
+              action={
+                <Badge variant="outline">
+                  {providers.filter((provider) => provider.configured && !provider.local).length} cloud configured
+                </Badge>
+              }
+            >
+              Universal provider API keys
+            </SectionLabel>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {API_KEY_FIELDS.map((field) => {
+                const provider = providers.find((item) => item.provider === field.provider);
+                const hasKey = Boolean(draft[field.hasKey]);
+                return (
+                  <div key={field.name} className="rounded-lg border border-border/60 bg-black/20 p-3">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="flex items-center gap-2 text-xs font-medium">
+                        <KeyRound className="h-3.5 w-3.5 text-factory-cyan" />
+                        {field.label}
+                      </span>
+                      <Badge variant={provider?.online ? "success" : hasKey ? "info" : "outline"}>
+                        {provider?.online ? "ready" : hasKey ? "key saved" : "not configured"}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Input
+                        type="password"
+                        value={apiKeys[field.name]}
+                        onChange={(event) =>
+                          setApiKeys((current) => ({
+                            ...current,
+                            [field.name]: event.target.value,
+                          }))
+                        }
+                        className="font-mono text-xs"
+                        placeholder={hasKey ? "•••••••• configured — enter to replace" : field.placeholder}
+                      />
+                      {hasKey && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => void clearApiKey(field)}
+                          title={`Clear ${field.label} key`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
+              Keys are saved locally in <span className="font-mono">.data/factory.json</span>, mirrored to{" "}
+              <span className="font-mono">.env.local</span> with mode 600 and cached in this browser&apos;s
+              localStorage so the form survives reloads. The browser cache is not an encrypted secret store.
+            </p>
           </section>
 
           <section className="panel p-4">
@@ -514,14 +740,72 @@ export default function SettingsPage() {
                   className="font-mono"
                 />
               </div>
+              <div className="grid gap-1.5">
+                <Label>Guardrail pass threshold (0–100)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={draft.guardrailThreshold}
+                  onChange={(event) => set("guardrailThreshold", Number(event.target.value))}
+                  className="font-mono"
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Corrective retries per handoff</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="4"
+                  value={draft.guardrailMaxRetries}
+                  onChange={(event) => set("guardrailMaxRetries", Number(event.target.value))}
+                  className="font-mono"
+                />
+              </div>
             </div>
             <div className="mt-4">
               <ToggleRow
                 title="Agent-to-agent auto-handoff"
-                description="If an agent mentions another specialist in its reply, the orchestrator forwards the payload and original request automatically."
+                description="If an agent mentions another specialist in its reply, every named agent receives a validated handoff."
                 checked={draft.autoHandoff}
                 onChange={(value) => set("autoHandoff", value)}
               />
+            </div>
+
+            <div className="mt-4 rounded-lg border border-factory-amber/20 bg-factory-amber/5 p-3">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium text-factory-amber">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Supervisor & dead-loop guard
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <Label>Trace window (last N steps)</Label>
+                  <Input
+                    type="number"
+                    min="3"
+                    max="12"
+                    value={draft.deadLoopWindow}
+                    onChange={(event) => set("deadLoopWindow", Number(event.target.value))}
+                    className="font-mono"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label>Identical transitions to freeze</Label>
+                  <Input
+                    type="number"
+                    min="2"
+                    max="8"
+                    value={draft.deadLoopThreshold}
+                    onChange={(event) => set("deadLoopThreshold", Number(event.target.value))}
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+              <p className="mt-2 text-[10px] leading-relaxed text-factory-amber/80">
+                The supervisor hashes [source → target + payload] for the last {draft.deadLoopWindow} handoffs.
+                Reaching {draft.deadLoopThreshold} identical transitions freezes the pipeline with a
+                DEAD_LOOP_EXCEPTION before another token is spent.
+              </p>
             </div>
           </section>
         </div>
@@ -621,6 +905,11 @@ export default function SettingsPage() {
             <SectionLabel>Build status</SectionLabel>
             <div className="space-y-2">
               <StatusLine label="Ollama" online={health?.ollama.online} detail={health?.ollama.version} />
+              <StatusLine
+                label="LM Studio"
+                online={health?.lmstudio?.online}
+                detail={health?.lmstudio?.online ? `${health.lmstudio.models} models` : "offline"}
+              />
               <StatusLine label="OpenCode" online={health?.opencode.online} detail={health?.opencode.version} />
               <StatusLine label="Local models" online={(health?.models.local ?? 0) > 0} detail={`${health?.models.local ?? 0} installed`} />
               <StatusLine label="Cloud catalog" online={health?.models.cloudOnline} detail={`${health?.models.cloud ?? 0} free models`} />

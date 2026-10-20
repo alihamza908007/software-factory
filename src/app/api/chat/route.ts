@@ -1,9 +1,10 @@
 import { getSettings, listAgents, getProject, getThread, createThread, appendThreadMessage, updateThreadMessage } from "@/lib/db";
 import { generateWithAgent } from "@/lib/providers/router";
 import { chatPrompt, handoffPrompt } from "@/lib/orchestrator/prompts";
+import { correctiveInstruction, validateAgentHandoff } from "@/lib/orchestrator/guardrails";
 import { parseMentions, readJson, sseChunk, sseHeaders } from "@/lib/api";
 import { startRun } from "@/lib/orchestrator/engine";
-import type { Agent, ChatMessage, ChatThread } from "@/lib/types";
+import type { Agent, ChatMessage, ChatThread, GuardrailResult } from "@/lib/types";
 import { readProjectFile, listWorkspaceFiles } from "@/lib/workspace";
 import { slugify, uid } from "@/lib/utils";
 
@@ -159,17 +160,21 @@ export async function POST(request: Request) {
         const history = (await getThread(thread.id))?.messages ?? [];
         const context = await projectContext(body.projectId);
         const visited = new Set<string>();
-        const queue: Array<{ agent: Agent; handoff?: { from: string; output: string } }> =
-          targets.slice(0, 3).map((agent) => ({ agent }));
+        const queue: Array<{
+          agent: Agent;
+          depth: number;
+          handoff?: { from: string; output: string; correction?: string };
+        }> = targets.map((agent) => ({ agent, depth: 0 }));
         const maxDepth = settings.maxHandoffDepth;
-        let depth = 0;
+        const autoHandoff = body.autoHandoff ?? settings.autoHandoff;
+        let frozen = false;
 
-        while (queue.length && depth <= maxDepth) {
+        while (queue.length && !frozen) {
           if (request.signal.aborted) throw new DOMException("Aborted", "AbortError");
           const item = queue.shift()!;
+          if (item.depth > maxDepth) continue;
           if (visited.has(item.agent.id)) continue;
           visited.add(item.agent.id);
-          depth += 1;
 
           const assistantMessage: ChatMessage = {
             id: uid("msg"),
@@ -196,6 +201,7 @@ export async function POST(request: Request) {
                 item.handoff.from,
                 body.message.trim(),
                 item.handoff.output,
+                item.handoff.correction,
               )
             : chatPrompt(
                 item.agent,
@@ -266,25 +272,65 @@ export async function POST(request: Request) {
               metrics,
             });
 
-            if (settings.autoHandoff) {
-              const nextMention = parseMentions(outcome.result.text).find((mention) => {
-                const next = findMentionedAgents(agents, [mention])[0];
-                return next && !visited.has(next.id);
-              });
-              if (nextMention) {
-                const nextAgent = findMentionedAgents(agents, [nextMention])[0];
-                if (nextAgent) {
-                  send("handoff", {
-                    from: item.agent.name,
-                    to: nextAgent.name,
-                    handle: nextAgent.handle,
-                    reason: `Mentioned in ${item.agent.name}'s output`,
+            if (autoHandoff && item.depth < maxDepth) {
+              const mentioned = parseMentions(outcome.result.text)
+                .map((mention) => findMentionedAgents(agents, [mention])[0])
+                .filter((agent): agent is Agent => Boolean(agent));
+              const nextAgents = Array.from(
+                new Map(mentioned.map((agent) => [agent.id, agent])).values(),
+              ).filter(
+                (agent) =>
+                  !visited.has(agent.id) &&
+                  !queue.some((queued) => queued.agent.id === agent.id),
+              );
+
+              // Fan-out: every specialist named in the source agent's output
+              // receives an independent handoff. The old behaviour picked only
+              // the first mention, which silently dropped parallel requests.
+              for (const nextAgent of nextAgents) {
+                let verdict: GuardrailResult;
+                try {
+                  verdict = await validateAgentHandoff({
+                    sourceAgent: item.agent,
+                    targetAgent: nextAgent,
+                    payload: outcome.result.text,
+                    originalRequest: body.message.trim(),
+                    traceKey: thread.id,
+                    stage: "chat",
                   });
-                  queue.push({
-                    agent: nextAgent,
-                    handoff: { from: item.agent.name, output: outcome.result.text },
-                  });
+                } catch (error) {
+                  send("error", { message: String(error) });
+                  continue;
                 }
+                send("guardrail", { result: verdict, from: item.agent.name, to: nextAgent.name });
+                if (verdict.deadLoop.detected) {
+                  frozen = true;
+                  send("dead_loop", { result: verdict, deadLoop: verdict.deadLoop });
+                  send("error", {
+                    message: verdict.deadLoop.message,
+                    code: "DEAD_LOOP_EXCEPTION",
+                  });
+                  break;
+                }
+                const correction = verdict.passed ? undefined : correctiveInstruction(verdict);
+                send("handoff", {
+                  from: item.agent.name,
+                  to: nextAgent.name,
+                  handle: nextAgent.handle,
+                  reason: verdict.passed
+                    ? `Mentioned in ${item.agent.name}'s output · guardrail ${verdict.score}/100`
+                    : `Mentioned in ${item.agent.name}'s output · corrective retry (${verdict.score}/100)`,
+                  guardrail: verdict,
+                });
+                queue.push({
+                  agent: nextAgent,
+                  depth: item.depth + 1,
+                  handoff: {
+                    from: item.agent.name,
+                    output: outcome.result.text,
+                    correction,
+                  },
+                });
               }
             }
           } catch (error) {

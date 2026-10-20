@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type {
   Agent,
   AgentMetric,
+  CanvasTopology,
   FactorySettings,
   ModelInfo,
   Project,
@@ -14,6 +15,7 @@ import type {
 interface HealthPayload {
   ok: boolean;
   ollama: { online: boolean; version?: string; url: string };
+  lmstudio?: { online: boolean; models: number; url: string };
   opencode: { online: boolean; version?: string; url: string };
   models: { total: number; local: number; cloud: number; cloudOnline: boolean };
   hardware: {
@@ -48,7 +50,16 @@ interface FactoryStore {
   settings: (FactorySettings & {
     hasOpencodePassword?: boolean;
     hasGithubToken?: boolean;
+    hasOpenrouterApiKey?: boolean;
+    hasAnthropicApiKey?: boolean;
+    hasOpenaiApiKey?: boolean;
+    hasGeminiApiKey?: boolean;
   }) | null;
+  canvasTopology: CanvasTopology | null;
+  canvasLogs: string[];
+  setCanvasTopology: (topology: CanvasTopology | null) => void;
+  setCanvasLogs: (logs: string[]) => void;
+  appendCanvasLog: (line: string) => void;
   resolvedOpencodeUrl: string;
   resources: ResourceSnapshot | null;
   health: HealthPayload | null;
@@ -93,6 +104,13 @@ export const useFactory = create<FactoryStore>((set, get) => ({
   health: null,
   loading: false,
   error: null,
+  canvasTopology: null,
+  canvasLogs: [],
+
+  setCanvasTopology: (topology) => set({ canvasTopology: topology }),
+  setCanvasLogs: (logs) => set({ canvasLogs: logs.slice(-250) }),
+  appendCanvasLog: (line) =>
+    set((state) => ({ canvasLogs: [...state.canvasLogs, line].slice(-250) })),
 
   fetchModels: async (refresh = false) => {
     if (get().modelsLoading) return;
@@ -153,6 +171,10 @@ export const useFactory = create<FactoryStore>((set, get) => ({
         settings: FactorySettings & {
           hasOpencodePassword?: boolean;
           hasGithubToken?: boolean;
+          hasOpenrouterApiKey?: boolean;
+          hasAnthropicApiKey?: boolean;
+          hasOpenaiApiKey?: boolean;
+          hasGeminiApiKey?: boolean;
         };
         resolvedOpencodeUrl: string;
       }>("/api/settings");

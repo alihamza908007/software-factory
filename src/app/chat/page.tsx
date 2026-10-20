@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFactory } from "@/lib/store";
-import type { Agent, ChatMessage, ChatThread, Run } from "@/lib/types";
+import type { Agent, ChatMessage, ChatThread, DeadLoopInfo, GuardrailResult, Run } from "@/lib/types";
 import { cn, formatDuration, formatTokens, timeAgo } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
@@ -320,6 +320,37 @@ export default function ChatPage() {
           role: "system",
           content: `**${data.from}** handed off to **${data.to}** (@${data.handle}). ${data.reason}.`,
           createdAt: Date.now(),
+        },
+      ]);
+      return;
+    }
+    if (event === "guardrail") {
+      const data = payload as { result: GuardrailResult };
+      toast[data.result.passed ? "success" : "warning"](
+        `Guardrail ${data.result.score}/100`,
+        {
+          description:
+            data.result.errors[0] ??
+            `${data.result.sourceAgent} → ${data.result.targetAgent}`,
+        },
+      );
+      return;
+    }
+    if (event === "dead_loop") {
+      const data = payload as { result?: GuardrailResult; deadLoop?: DeadLoopInfo };
+      const info = data.deadLoop ?? data.result?.deadLoop;
+      setHandoff("Pipeline frozen");
+      toast.error("Dead loop detected", {
+        description: info?.message ?? "Pipeline frozen for user review.",
+      });
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `dead-loop-${Date.now()}`,
+          role: "system",
+          content: `**Dead loop detected — pipeline frozen.** ${info?.message ?? ""}`,
+          createdAt: Date.now(),
+          error: true,
         },
       ]);
       return;

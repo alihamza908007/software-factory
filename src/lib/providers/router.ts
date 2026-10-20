@@ -3,8 +3,8 @@ import { resourceQueue } from "../queue/resource-manager";
 import type { Agent, AgentMetric, ModelInfo, ResourceReservation } from "../types";
 import { uid } from "../utils";
 import { getModel } from "./catalog";
-import { generateOllama, type ProviderMessage, type ProviderResult } from "./ollama";
-import { generateOpenCode } from "./opencode";
+import type { ProviderMessage, ProviderResult } from "./ollama";
+import { executeLLMCall } from "../llm/universal-provider";
 
 export interface GenerateOptions {
   agent: Agent;
@@ -23,6 +23,10 @@ export interface GenerateOptions {
   }) => void;
   allowFallbackOnError?: boolean;
   persistMetric?: boolean;
+}
+
+function isLocalProvider(provider: ModelInfo["provider"]): boolean {
+  return provider === "ollama" || provider === "lmstudio";
 }
 
 export interface GenerateOutcome {
@@ -45,7 +49,7 @@ async function resolveFallback(
     if (key === primary.key) continue;
     const model = await getModel(key);
     if (!model) continue;
-    if (model.provider === "opencode" && !allowCloud) continue;
+    if (!isLocalProvider(model.provider) && !allowCloud) continue;
     return model;
   }
   return undefined;
@@ -55,27 +59,34 @@ async function callProvider(
   model: ModelInfo,
   options: GenerateOptions,
 ): Promise<ProviderResult> {
-  if (model.provider === "ollama") {
-    return generateOllama({
-      model,
-      messages: options.messages,
-      temperature: options.agent.temperature,
-      maxTokens: options.agent.maxTokens,
-      signal: options.signal,
-      onToken: options.onToken,
-      onThinking: options.onThinking,
-    });
-  }
-  return generateOpenCode({
-    model,
+  const result = await executeLLMCall({
+    provider: model.provider,
+    modelId: model.modelId,
     messages: options.messages,
     temperature: options.agent.temperature,
     maxTokens: options.agent.maxTokens,
     signal: options.signal,
     onToken: options.onToken,
-    directory: options.projectDir,
+    onThinking: options.onThinking,
     title: `${options.agent.name} · ${options.purpose}`.slice(0, 80),
   });
+  const computedCost =
+    result.costUsd ||
+    (result.inputTokens / 1_000_000) * model.costInputPerMTok +
+      (result.outputTokens / 1_000_000) * model.costOutputPerMTok;
+  return {
+    text: result.text,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
+    ttftMs: result.ttftMs,
+    totalMs: result.totalMs,
+    tokensPerSec: result.tokensPerSec,
+    vramMB: model.kind === "local" ? model.vramEstimateMB : 0,
+    costUsd: model.zeroCost ? 0 : computedCost,
+    modelKey: model.key,
+    provider: model.provider,
+    rawFinish: result.finishReason,
+  };
 }
 
 export async function generateWithAgent(options: GenerateOptions): Promise<GenerateOutcome> {
@@ -107,7 +118,7 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
     });
   } catch (error) {
     // The VRAM manager could not place the job. If the agent has a cloud fallback, use it.
-    if (fallback && fallback.provider !== "ollama") {
+    if (fallback && !isLocalProvider(fallback.provider)) {
       reservation = await resourceQueue.acquire({
         model: fallback,
         agentId: options.agent.id,
@@ -161,7 +172,7 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
         options.allowFallbackOnError !== false &&
         fallback &&
         fallback.key !== effective.key &&
-        (fallback.provider !== "opencode" || settings.allowCloudFallback)
+        (isLocalProvider(fallback.provider) || settings.allowCloudFallback)
       ) {
         resourceQueue.release(reservation);
         options.onStatus?.({

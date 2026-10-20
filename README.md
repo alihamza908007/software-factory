@@ -14,6 +14,9 @@ Everything runs locally. Cloud models are optional and only used as routing targ
 - **Self-healing loop** — the toolchain runs locally, failures are scraped and piped back to the developer agent, and the loop repeats until the suite passes or the heal budget is exhausted.
 - **Git automation** — a feature branch per run, semantic commits per phase, and a generated `.github/workflows/main.yml`. With a GitHub token configured it pushes the branch and drafts a pull request with an agent-written summary.
 - **VRAM guardrails** — heavy local models are serialised (one generating at a time by default) with a queue, timeout and graceful fallback to lighter local or cloud models tuned for a 48 GB M4 Pro.
+- **Universal provider layer** — one `executeLLMCall()` abstraction for Ollama, LM Studio, OpenCode, OpenRouter, Anthropic, OpenAI and Google Gemini, with streaming, token accounting and JSON-schema mode.
+- **Supervisor guardrails** — every agent-to-agent handoff is scored 0–100, failed payloads are sent back to the source agent for up to two corrective retries, and identical transitions are frozen with `DEAD_LOOP_EXCEPTION`.
+- **Parallel canvas DAG** — drag agent, validator and router nodes in the pipeline canvas, connect pass/fail branches, validate the graph, and run independent branches with `Promise.all()` while cloud calls stay unlimited and local models pass through the VRAM queue.
 
 ## Requirements
 
@@ -21,6 +24,8 @@ Everything runs locally. Cloud models are optional and only used as routing targ
 - Node.js 20+ (built and verified on Node 25).
 - [Ollama](https://ollama.com) running locally at `http://localhost:11434` with at least one model pulled.
 - [OpenCode](https://opencode.ai) CLI installed and signed in, for cloud models.
+- Optional: [LM Studio](https://lmstudio.ai) exposing an OpenAI-compatible server at `http://localhost:1234/v1`.
+- Optional: OpenRouter, Anthropic, OpenAI or Google Gemini API keys, configured in **Settings → Universal provider API keys**.
 
 ```bash
 ollama pull qwen3.8:27b-mlx     # heavy local "developer" model
@@ -46,11 +51,12 @@ npm run build && npm start
 
 ## Using it
 
-1. Open **Settings** and confirm the providers are online. Models are discovered live from Ollama and OpenCode.
+1. Open **Settings** and confirm the providers are online. Models are discovered live from Ollama, LM Studio and OpenCode; cloud keys unlock OpenRouter, Anthropic, OpenAI and Gemini models.
 2. Open **Projects**, create a project (name, brief, stack: `node`, `next` or `python`). A scaffold and a git repo are created in the sandbox, and a shortcut to the project appears in **`~/Desktop/Software Factory`**.
 3. Click **Run pipeline** and paste a build brief. The engine executes all five phases and streams logs, commands and self-heal attempts to the pipeline view.
-4. Use **Chat** to talk to agents (`@morgan`, `@ada`, `@lin`, `@vera`, `@deacon`), or launch an autonomous run straight from chat.
-5. Use **Agents** to tune models, prompts and temperatures, and to watch per-agent metrics.
+4. Open **Pipeline → Canvas editor** to design a custom DAG. Agent nodes call the assigned model, validator nodes run local assertions, router nodes choose `pass`/`fail` branches, and **Run DAG** streams live node status without blocking other branches.
+5. Use **Chat** to talk to agents (`@morgan`, `@ada`, `@lin`, `@vera`, `@deacon`), or launch an autonomous run straight from chat. Every agent mentioned by another agent receives its own validated handoff.
+6. Use **Agents** to tune models, prompts and temperatures, and to watch per-agent metrics.
 
 ### Default crew
 
@@ -69,22 +75,29 @@ Every agent has a fallback model; if a cloud call fails the router retries on th
 ```
 src/
   app/                     Next.js App Router pages + API routes
-    api/                   models, agents, projects, runs (+SSE), chat (+SSE), threads, settings, resources, health
-  components/              UI (shadcn/ui primitives, app shell, agent/model/metric widgets)
+    api/                   models, agents, projects, runs (+SSE), chat (+SSE), canvas, threads, settings, providers, resources, health
+  components/
+    canvas/                React Flow agent, validator and router nodes + DAG editor
+    ...
   lib/
-    orchestrator/          engine.ts (5 phases, self-heal, commits, CI, PR), prompts.ts, parse.ts
+    llm/                   universal-provider.ts (one ModelRequest/streaming contract for every backend)
+    canvas/                pure topology defaults and cycle validation (safe for the browser)
+    orchestrator/          engine.ts (5 phases, self-heal, commits, CI, PR), guardrails.ts, scheduler.ts, prompts.ts, parse.ts
     providers/             catalog.ts (discovery), ollama.ts, opencode.ts (CLI worker), router.ts
     queue/                 resource-manager.ts (VRAM budget, heavy/light concurrency, queue)
     tools/                 terminal.ts (allowlisted runner), toolchain.ts, git.ts, github.ts, workflow.ts
     db.ts                  JSON persistence in .data
+    env-sync.ts            scoped .env.local synchronization for provider settings
     workspace.ts           sandboxed file IO
 ```
 
 ### Model routing
 
 - **Ollama** models are served over the native streaming `/api/chat` endpoint; token counts, TTFT and tok/s are captured server-side.
-- **OpenCode cloud** models are free-tier and only usable from inside OpenCode, so the adapter runs `opencode run --agent plan --format json` in a scratch directory, parses the JSON event stream, and enforces a text-only contract (no tools). Cloud models use the provider's sampling defaults; `temperature` and `maxTokens` apply to Ollama calls. See the note in *Troubleshooting*.
-- The **Resource Manager** treats cloud models as zero-VRAM. Heavy local models are queued (default `maxConcurrentHeavy: 1`) with a configurable queue timeout that falls back to a lighter model.
+- **LM Studio / OpenAI / OpenRouter** use the OpenAI-compatible `/v1/chat/completions` streaming API. **Anthropic** uses `/v1/messages` SSE and **Gemini** uses `streamGenerateContent` SSE.
+- **OpenCode cloud** models are free-tier and only usable from inside OpenCode, so the adapter runs `opencode run --agent plan --format json` in a scratch directory, parses the JSON event stream, and enforces a text-only contract (no tools). Cloud models use the provider's sampling defaults; `temperature` and `maxTokens` apply to local calls. See the note in *Troubleshooting*.
+- The **Resource Manager** treats cloud models as zero-VRAM. Heavy local models are queued (default `maxConcurrentHeavy: 1`); light local models may run up to `maxConcurrentLight` streams (default 2).
+- **Guardrails** use a deterministic local classifier (no extra model call). Handoffs below the configured threshold are repaired by the source agent up to `guardrailMaxRetries` times. The supervisor hashes the last `deadLoopWindow` transitions and freezes on `deadLoopThreshold` identical `[source → target + payload]` handoffs.
 
 ### Agent output contract
 
@@ -110,8 +123,10 @@ The parser writes them through `resolveInside`, which blocks `..`, `.env*`, `.gi
 
 All persisted in `.data/factory.json` and editable in the UI:
 
-- Ollama / OpenCode URLs and OpenCode password (auto-read from `~/.config/opencode/service.json` when blank).
-- VRAM budget, reserve, concurrency limits, queue timeout, fallback model.
+- Ollama / LM Studio / OpenCode URLs and OpenCode password (auto-read from `~/.config/opencode/service.json` when blank).
+- OpenRouter, Anthropic, OpenAI and Gemini API keys. Changed values are mirrored into `.env.local` with mode `600`; untouched lines in that file are preserved.
+- VRAM budget, reserve, heavy/light concurrency limits, queue timeout, fallback model.
+- Guardrail threshold, corrective retries, dead-loop trace window and freeze threshold.
 - Heal attempts, command timeout, execution and auto-commit toggles.
 - Git author identity and GitHub token / owner / repo / base branch.
 

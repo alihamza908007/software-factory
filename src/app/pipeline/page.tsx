@@ -25,13 +25,21 @@ import {
   Rocket,
   Terminal,
   Timer,
+  Workflow,
   Wrench,
   XCircle,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFactory } from "@/lib/store";
-import type { PhaseId, PhaseState, Run, RunStatus } from "@/lib/types";
+import type {
+  DeadLoopInfo,
+  GuardrailResult,
+  PhaseId,
+  PhaseState,
+  Run,
+  RunStatus,
+} from "@/lib/types";
 import { PHASES, SDLC_PHASE_META } from "@/lib/constants";
 import { cn, formatDuration, formatMB, timeAgo, truncate } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
@@ -40,6 +48,7 @@ import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { ModelBadge } from "@/components/shared/model-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { launchRunDialog } from "@/components/shared/run-launcher";
+import { PipelineCanvas } from "@/components/canvas/PipelineCanvas";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -58,6 +67,7 @@ export default function PipelinePage() {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "passed" | "failed">("all");
   const [expanded, setExpanded] = useState<PhaseId | null>("implementation");
+  const [canvasOnly, setCanvasOnly] = useState(false);
   const queryApplied = useRef(false);
 
   useEffect(() => {
@@ -175,6 +185,25 @@ export default function PipelinePage() {
         setRun((prev) => (prev ? { ...prev, artifacts: data.artifacts } : prev));
       }
     });
+    source.addEventListener("guardrail", (event) => {
+      const data = parse(event) as { result?: GuardrailResult } | null;
+      if (data?.result) {
+        toast[data.result.passed ? "success" : "warning"](
+          `Guardrail ${data.result.score}/100`,
+          {
+            description: `${data.result.sourceAgent} → ${data.result.targetAgent}${
+              data.result.errors.length ? ` · ${data.result.errors[0]}` : ""
+            }`,
+          },
+        );
+      }
+    });
+    source.addEventListener("dead_loop", (event) => {
+      const data = parse(event) as { deadLoop?: DeadLoopInfo } | null;
+      toast.error("Dead loop detected — pipeline frozen", {
+        description: data?.deadLoop?.message ?? "The same transition repeated without progress.",
+      });
+    });
     source.addEventListener("done", (event) => {
       const data = parse(event);
       if (data?.status) {
@@ -261,6 +290,10 @@ export default function PipelinePage() {
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh
             </Button>
+            <Button variant="outline" size="sm" onClick={() => setCanvasOnly((value) => !value)}>
+              <Workflow className="h-3.5 w-3.5" />
+              {canvasOnly ? "Back to runs" : "Canvas editor"}
+            </Button>
             <Button size="sm" onClick={() => launchRunDialog()}>
               <Plus className="h-3.5 w-3.5" />
               New run
@@ -269,6 +302,16 @@ export default function PipelinePage() {
         }
       />
 
+      {canvasOnly ? (
+        <div className="space-y-3">
+          <div className="rounded-lg border border-factory-cyan/20 bg-factory-cyan/5 px-3 py-2 text-[11px] leading-relaxed text-factory-cyan/90">
+            Build a DAG of agent, validator and router nodes. Independent branches execute in
+            parallel; heavy local models are still gated by the VRAM queue. Click{" "}
+            <span className="font-mono">Run DAG</span> to stream live node status.
+          </div>
+          <PipelineCanvas />
+        </div>
+      ) : (
       <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="hidden xl:block">
           <div className="panel flex h-[calc(100vh-13rem)] min-h-[560px] flex-col">
@@ -534,6 +577,7 @@ export default function PipelinePage() {
                     <TabsTrigger value="kanban">Kanban</TabsTrigger>
                     <TabsTrigger value="timeline">Timeline</TabsTrigger>
                     <TabsTrigger value="logs">Live logs</TabsTrigger>
+                    <TabsTrigger value="canvas">Canvas DAG</TabsTrigger>
                   </TabsList>
                   <div className="flex items-center gap-2 font-mono text-[9px] text-muted-foreground">
                     <span className={cn("h-1.5 w-1.5 rounded-full", running ? "animate-pulse bg-factory-lime" : "bg-white/20")} />
@@ -704,6 +748,10 @@ export default function PipelinePage() {
                 <TabsContent value="logs">
                   <AllLogs run={run} />
                 </TabsContent>
+
+                <TabsContent value="canvas">
+                  <PipelineCanvas />
+                </TabsContent>
               </Tabs>
 
               <div className="grid gap-4 lg:grid-cols-2">
@@ -817,6 +865,7 @@ export default function PipelinePage() {
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
