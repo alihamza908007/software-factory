@@ -11,6 +11,7 @@ export interface ProviderRequest {
   messages: ProviderMessage[];
   temperature?: number;
   maxTokens?: number;
+  jsonMode?: boolean;
   signal?: AbortSignal;
   onToken?: (delta: string, fullText: string) => void;
   onThinking?: (delta: string) => void;
@@ -54,6 +55,7 @@ export async function generateOllama(request: ProviderRequest): Promise<Provider
       messages: request.messages,
       stream: true,
       keep_alive: "5m",
+      ...(request.jsonMode ? { format: "json" } : {}),
       options: {
         temperature: request.temperature ?? 0.2,
         num_predict: request.maxTokens ?? 4096,

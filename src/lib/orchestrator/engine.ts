@@ -1092,6 +1092,16 @@ export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> 
         await processImplementation(runId, project, root, agents, spec, architecture);
       } else if (phaseId === "testing") {
         await processTesting(runId, project, root, agents, spec, architecture, settings);
+      } else if (phaseId === "deployment") {
+        const current = await getRun(runId);
+        await processDeployment(
+          runId,
+          project,
+          root,
+          agents,
+          settings,
+          current?.artifacts.summary ?? "Tests passed in the testing phase.",
+        );
       } else {
         throw new Error(`Rerunning the ${phaseId} phase is not supported yet.`);
       }

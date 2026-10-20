@@ -67,11 +67,17 @@ export function createPhases(): PhaseState[] {
 
 export const DEFAULT_SETTINGS: FactorySettings = {
   ollamaUrl: "http://127.0.0.1:11434",
+  lmstudioUrl: "http://127.0.0.1:1234/v1",
   opencodeUrl: "",
   opencodePassword: "",
+  openrouterApiKey: "",
+  anthropicApiKey: "",
+  openaiApiKey: "",
+  geminiApiKey: "",
   vramBudgetMB: 36864,
   reserveMB: 8192,
   maxConcurrentHeavy: 1,
+  maxConcurrentLight: 2,
   allowConcurrentLight: true,
   allowCloudFallback: true,
   vramQueueTimeoutMs: 90_000,
@@ -90,6 +96,10 @@ export const DEFAULT_SETTINGS: FactorySettings = {
   defaultAgentId: "",
   autoHandoff: true,
   maxHandoffDepth: 2,
+  guardrailThreshold: 70,
+  guardrailMaxRetries: 2,
+  deadLoopWindow: 5,
+  deadLoopThreshold: 3,
   updatedAt: 0,
 };
 

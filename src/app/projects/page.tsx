@@ -13,6 +13,7 @@ import {
   Folder,
   GitBranch,
   Loader2,
+  MonitorSmartphone,
   Plus,
   Rocket,
   Search,
@@ -94,7 +95,11 @@ export default function ProjectsPage() {
       setCreating(false);
       setNewName("");
       setNewDescription("");
-      toast.success("Workspace scaffolded", { description: data.project.workspacePath });
+      toast.success("Workspace scaffolded", {
+        description: data.project.desktopLink
+          ? `Desktop shortcut: ${data.project.desktopLink}`
+          : data.project.workspacePath,
+      });
       void openDetail(data.project);
     } catch (error) {
       toast.error(String(error));
@@ -335,6 +340,19 @@ export default function ProjectsPage() {
                   >
                     <Copy className="h-3 w-3" />
                   </button>
+                  {detail.desktopLink && (
+                    <button
+                      onClick={() => {
+                        void navigator.clipboard.writeText(detail.desktopLink as string);
+                        toast.success("Desktop shortcut copied.");
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-factory-lime/25 bg-factory-lime/5 px-2 py-0.5 font-mono text-[9px] text-factory-lime hover:bg-factory-lime/10"
+                      title={detail.desktopLink}
+                    >
+                      <MonitorSmartphone className="h-3 w-3" />
+                      Desktop
+                    </button>
+                  )}
                 </div>
                 <DialogTitle>{detail.name}</DialogTitle>
                 <DialogDescription>{detail.description}</DialogDescription>

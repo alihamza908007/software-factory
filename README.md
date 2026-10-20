@@ -42,12 +42,12 @@ Production build:
 npm run build && npm start
 ```
 
-> The factory stores state in `.data/factory.json` and project workspaces in `.data/workspaces/`. Both are git-ignored.
+> The factory stores state in `.data/factory.json` and project workspaces in `.data/workspaces/`. Each new project also gets a symlink shortcut in `~/Desktop/Software Factory` for quick Finder access; the shortcut is safe to delete without affecting the project. Both `.data/` and the shortcut base folder are local-only.
 
 ## Using it
 
 1. Open **Settings** and confirm the providers are online. Models are discovered live from Ollama and OpenCode.
-2. Open **Projects**, create a project (name, brief, stack: `node`, `next` or `python`). A scaffold and a git repo are created in the sandbox.
+2. Open **Projects**, create a project (name, brief, stack: `node`, `next` or `python`). A scaffold and a git repo are created in the sandbox, and a shortcut to the project appears in **`~/Desktop/Software Factory`**.
 3. Click **Run pipeline** and paste a build brief. The engine executes all five phases and streams logs, commands and self-heal attempts to the pipeline view.
 4. Use **Chat** to talk to agents (`@morgan`, `@ada`, `@lin`, `@vera`, `@deacon`), or launch an autonomous run straight from chat.
 5. Use **Agents** to tune models, prompts and temperatures, and to watch per-agent metrics.

@@ -1,4 +1,11 @@
-export type ModelProvider = "ollama" | "opencode" | "openai";
+export type ModelProvider =
+  | "ollama"
+  | "lmstudio"
+  | "opencode"
+  | "openrouter"
+  | "anthropic"
+  | "openai"
+  | "google";
 
 export type ModelKind = "local" | "cloud";
 
@@ -20,8 +27,18 @@ export interface ModelInfo {
   costOutputPerMTok: number;
   zeroCost: boolean;
   releaseDate?: number;
-  source: "ollama" | "opencode" | "static";
+  source: ModelProvider | "static";
   online: boolean;
+}
+
+export interface ProviderHealth {
+  provider: ModelProvider;
+  label: string;
+  online: boolean;
+  configured: boolean;
+  local: boolean;
+  detail?: string;
+  url?: string;
 }
 
 export interface Agent {
@@ -70,6 +87,8 @@ export interface Project {
   description: string;
   stack: "node" | "python" | "next";
   workspacePath: string;
+  desktopLink?: string;
+  desktopLinkError?: string;
   createdAt: number;
   updatedAt: number;
   gitInitialized: boolean;
@@ -231,11 +250,17 @@ export interface ChatThread {
 
 export interface FactorySettings {
   ollamaUrl: string;
+  lmstudioUrl: string;
   opencodeUrl: string;
   opencodePassword: string;
+  openrouterApiKey: string;
+  anthropicApiKey: string;
+  openaiApiKey: string;
+  geminiApiKey: string;
   vramBudgetMB: number;
   reserveMB: number;
   maxConcurrentHeavy: number;
+  maxConcurrentLight: number;
   allowConcurrentLight: boolean;
   allowCloudFallback: boolean;
   vramQueueTimeoutMs: number;
@@ -254,6 +279,10 @@ export interface FactorySettings {
   defaultAgentId: string;
   autoHandoff: boolean;
   maxHandoffDepth: number;
+  guardrailThreshold: number;
+  guardrailMaxRetries: number;
+  deadLoopWindow: number;
+  deadLoopThreshold: number;
   updatedAt: number;
 }
 
@@ -288,6 +317,81 @@ export interface ResourceSnapshot {
   updatedAt: number;
 }
 
+export type GuardrailCheckLevel = "pass" | "warn" | "fail";
+
+export interface GuardrailCheck {
+  id: string;
+  label: string;
+  level: GuardrailCheckLevel;
+  score: number;
+  detail: string;
+}
+
+export interface HandoffTraceStep {
+  sourceAgent: string;
+  targetAgent: string;
+  payloadHash: string;
+  at: number;
+  progressed: boolean;
+}
+
+export interface DeadLoopInfo {
+  detected: boolean;
+  transition: string;
+  occurrences: number;
+  window: HandoffTraceStep[];
+  message: string;
+}
+
+export interface GuardrailResult {
+  id: string;
+  sourceAgent: string;
+  targetAgent: string;
+  score: number;
+  passed: boolean;
+  threshold: number;
+  checks: GuardrailCheck[];
+  errors: string[];
+  payloadHash: string;
+  retryCount: number;
+  deadLoop: DeadLoopInfo;
+  createdAt: number;
+}
+
+export type CanvasNodeKind = "agent" | "validator" | "router";
+
+export interface CanvasNodeData {
+  label: string;
+  kind: CanvasNodeKind;
+  agentId?: string;
+  modelKey?: string;
+  provider?: ModelProvider;
+  prompt?: string;
+  assertion?: string;
+  condition?: string;
+  status?: "idle" | "queued" | "running" | "passed" | "failed" | "blocked";
+  detail?: string;
+  guardrailScore?: number;
+}
+
+export interface CanvasTopology {
+  version: 1;
+  nodes: Array<{
+    id: string;
+    type: CanvasNodeKind;
+    position: { x: number; y: number };
+    data: CanvasNodeData;
+  }>;
+  edges: Array<{
+    id: string;
+    source: string;
+    target: string;
+    label?: string;
+    animated?: boolean;
+  }>;
+  updatedAt: number;
+}
+
 export interface FactoryDb {
   version: number;
   agents: Agent[];
@@ -311,6 +415,8 @@ export type RunEvent =
   | { type: "log"; runId: string; phaseId: PhaseId; log: PhaseLog }
   | { type: "status"; runId: string; status: RunStatus; currentPhase: PhaseId | null }
   | { type: "heal"; runId: string; attempt: HealAttempt }
+  | { type: "guardrail"; runId: string; result: GuardrailResult }
+  | { type: "dead_loop"; runId: string; deadLoop: DeadLoopInfo }
   | { type: "artifact"; runId: string; artifacts: RunArtifacts }
   | { type: "done"; runId: string; status: RunStatus }
   | { type: "error"; runId: string; message: string };
@@ -322,6 +428,8 @@ export interface ChatStreamEvent {
     | "agent"
     | "metrics"
     | "handoff"
+    | "guardrail"
+    | "dead_loop"
     | "message"
     | "run"
     | "error"

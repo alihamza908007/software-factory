@@ -419,6 +419,15 @@ export default function PipelinePage() {
                           <Play className="h-3.5 w-3.5" />
                           Rebuild
                         </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => rerun("deployment")}
+                          disabled={busy}
+                        >
+                          <Rocket className="h-3.5 w-3.5" />
+                          Deploy
+                        </Button>
                       </>
                     )}
                   </div>

@@ -2,6 +2,7 @@ import { apiError, json } from "@/lib/api";
 import { listProjects, listRuns, saveProject } from "@/lib/db";
 import type { Project } from "@/lib/types";
 import { scaffoldProject, workspacePathFor } from "@/lib/workspace";
+import { createProjectShortcut } from "@/lib/desktop";
 import { slugify, uid } from "@/lib/utils";
 import { promises as fs } from "node:fs";
 
@@ -41,6 +42,10 @@ export async function POST(request: Request) {
     const workspacePath = workspacePathFor(slug, id);
     await fs.mkdir(workspacePath, { recursive: true });
     await scaffoldProject(workspacePath, stack, body.name.trim());
+    const shortcut = await createProjectShortcut(body.name.trim(), workspacePath, id);
+    if (shortcut.error) {
+      console.warn(`[factory] desktop shortcut skipped: ${shortcut.error}`);
+    }
     const now = Date.now();
     const project: Project = {
       id,
@@ -49,6 +54,8 @@ export async function POST(request: Request) {
       description: body.description?.trim() || body.name.trim(),
       stack,
       workspacePath,
+      desktopLink: shortcut.path,
+      desktopLinkError: shortcut.error,
       createdAt: now,
       updatedAt: now,
       gitInitialized: false,
