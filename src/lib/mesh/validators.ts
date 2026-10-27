@@ -751,6 +751,7 @@ async function semanticWitness(
       ],
       purpose: "silent witness review",
       priority: 2,
+      timeoutMs: 60_000,
       allowFallbackOnError: false,
       persistMetric: false,
     });

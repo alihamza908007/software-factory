@@ -244,6 +244,7 @@ export function AgentChatMatrix({
       <section className="panel flex h-full min-h-[420px] min-w-0 max-w-full flex-1 flex-col overflow-hidden">
         <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="live-dot" aria-hidden />
             <Waypoints className="h-3.5 w-3.5 shrink-0 text-factory-cyan" />
             <span className="truncate text-xs font-medium">Master Chat Matrix</span>
             <Badge variant="outline" className="shrink-0 font-mono text-[9px]">{formatTokens(sessionTokens)} tokens</Badge>

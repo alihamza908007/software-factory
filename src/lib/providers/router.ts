@@ -9,6 +9,34 @@ import { injectAgentMemory } from "../mesh/agent-memory";
 import { recordTokenUsage } from "../mesh/analytics";
 import { agentRosterPrompt } from "../mesh/router";
 
+const circuitState = new Map<string, { failures: number; openUntil: number }>();
+const CIRCUIT_THRESHOLD = 3;
+const CIRCUIT_COOLDOWN_MS = 60_000;
+
+function isCircuitOpen(provider: string): boolean {
+  const state = circuitState.get(provider);
+  if (!state) return false;
+  if (state.openUntil > Date.now()) return true;
+  if (state.openUntil > 0) {
+    // cooldown expired; reset
+    circuitState.delete(provider);
+  }
+  return false;
+}
+
+function recordCircuitFailure(provider: string): void {
+  const state = circuitState.get(provider) ?? { failures: 0, openUntil: 0 };
+  state.failures += 1;
+  if (state.failures >= CIRCUIT_THRESHOLD) {
+    state.openUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
+  }
+  circuitState.set(provider, state);
+}
+
+function recordCircuitSuccess(provider: string): void {
+  circuitState.delete(provider);
+}
+
 export interface GenerateOptions {
   agent: Agent;
   messages: ProviderMessage[];
@@ -18,6 +46,7 @@ export interface GenerateOptions {
   signal?: AbortSignal;
   priority?: number;
   maxTokens?: number;
+  timeoutMs?: number;
   onToken?: (delta: string, fullText: string) => void;
   onThinking?: (delta: string) => void;
   onStatus?: (status: {
@@ -91,6 +120,7 @@ async function callProvider(
     temperature: options.agent.temperature,
     maxTokens: Math.min(options.agent.maxTokens, options.maxTokens ?? options.agent.maxTokens),
     signal: options.signal,
+    timeoutMs: options.timeoutMs,
     onToken: options.onToken,
     onThinking: options.onThinking,
     title: `${options.agent.name} · ${options.purpose}`.slice(0, 80),
@@ -138,6 +168,11 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
     primary,
     settings.allowCloudFallback,
   );
+  if (isCircuitOpen(primary.provider)) {
+    throw new Error(
+      `Provider "${primary.provider}" circuit is open after repeated failures. Retry in ~60s or choose another model.`,
+    );
+  }
   const started = Date.now();
 
   let reservation: ResourceReservation;
@@ -233,10 +268,13 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
     }
   } catch (error) {
     lastError = error;
+    recordCircuitFailure(effective?.provider ?? primary.provider);
     throw error;
   } finally {
     resourceQueue.release(reservation);
   }
+
+  if (result) recordCircuitSuccess(effective.provider);
 
   if (!result) {
     throw lastError instanceof Error ? lastError : new Error(String(lastError));

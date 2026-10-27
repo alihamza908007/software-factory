@@ -94,14 +94,29 @@ export async function getDb(): Promise<FactoryDb> {
   return globalStore.__factoryDb;
 }
 
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistPromise: Promise<void> | null = null;
+
+function schedulePersist(db: FactoryDb): Promise<void> {
+  if (persistPromise) return persistPromise;
+  persistPromise = new Promise<void>((resolve) => {
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      const promise = persistPromise;
+      persistPromise = null;
+      void persist(db)
+        .then(() => resolve())
+        .catch(() => resolve());
+    }, 100);
+  });
+  return persistPromise;
+}
+
 export async function updateDb<T>(mutator: (db: FactoryDb) => T | Promise<T>): Promise<T> {
   const db = await getDb();
   const result = await mutator(db);
   db.updatedAt = Date.now();
-  globalStore.__factoryWriteChain = (globalStore.__factoryWriteChain ?? Promise.resolve())
-    .catch(() => undefined)
-    .then(() => persist(db));
-  await globalStore.__factoryWriteChain;
+  await schedulePersist(db);
   return result;
 }
 
@@ -228,7 +243,10 @@ export async function saveRun(run: Run): Promise<Run> {
   return updateDb((db) => {
     const index = db.runs.findIndex((item) => item.id === run.id);
     if (index >= 0) db.runs[index] = run;
-    else db.runs.unshift(run);
+    else {
+      db.runs.unshift(run);
+      if (db.runs.length > 40) db.runs = db.runs.slice(0, 40);
+    }
     return run;
   });
 }
