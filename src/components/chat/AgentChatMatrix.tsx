@@ -241,7 +241,7 @@ export function AgentChatMatrix({
 
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-col gap-3", className)}>
-      <section className="panel flex h-full min-h-[420px] min-w-0 max-w-full flex-1 flex-col overflow-hidden">
+      <section className="panel flex h-full min-h-[420px] min-w-0 max-w-full flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2.5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <span className="live-dot" aria-hidden />
@@ -324,7 +324,7 @@ export function AgentChatMatrix({
         )}
 
         <ScrollArea className="min-h-0 min-w-0 flex-1">
-          <div className="w-full min-w-0 max-w-full space-y-4 px-3 py-4">
+          <div className="w-full min-w-0 max-w-full space-y-4 overflow-x-hidden px-3 py-4">
             {!messages.length && (
               <div className="flex flex-col items-center justify-center px-4 py-10 text-center">
                 <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl border border-factory-lime/20 bg-factory-lime/5">

@@ -229,6 +229,11 @@ export default function ChatPage() {
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[8px] text-muted-foreground">
                         <span>{(thread.directMessageCount ?? thread.messageCount)} msg</span>
+                        {(thread.handoffCount ?? 0) > 0 && (
+                          <span className="rounded-full border border-factory-cyan/25 bg-factory-cyan/5 px-1 text-factory-cyan">
+                            {thread.handoffCount} handoff{thread.handoffCount === 1 ? "" : "s"}
+                          </span>
+                        )}
                         <span>·</span>
                         <span>{timeAgo(thread.updatedAt)}</span>
                       </div>

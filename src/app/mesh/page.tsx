@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   GitMerge,
   Loader2,
+  MessagesSquare,
   Pause,
   Play,
   Radio,
@@ -27,7 +28,7 @@ import { cn, formatTokens, timeAgo } from "@/lib/utils";
 import { PageHeader, SectionLabel } from "@/components/shared/page-header";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { Metric } from "@/components/shared/metric";
-import { AgentChatMatrix, MeshEventCard } from "@/components/chat/AgentChatMatrix";
+import { MeshEventCard } from "@/components/chat/AgentChatMatrix";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -882,7 +883,7 @@ export default function MeshPage() {
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(220px,260px)_minmax(0,1fr)] 2xl:grid-cols-[260px_minmax(0,1fr)_330px]">
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(220px,260px)_minmax(0,1fr)]">
         <aside className="min-w-0 space-y-3">
           <section className="panel p-3">
             <SectionLabel
@@ -942,9 +943,40 @@ export default function MeshPage() {
           </section>
         </aside>
 
-        <AgentChatMatrix className="h-[min(72vh,820px)] min-h-[420px] min-w-0" />
-
-        <aside className="min-w-0 space-y-3 xl:col-span-2 2xl:col-span-1">
+        <aside className="min-w-0 space-y-3">
+          <section className="panel p-3">
+            <div className="flex items-center justify-between border-b border-border/60 px-3 py-2.5">
+              <span className="eyebrow flex items-center gap-1.5">
+                <MessagesSquare className="h-3 w-3 text-factory-cyan" />
+                Recent agent activity
+              </span>
+              <Link href="/chat" className="font-mono text-[9px] text-factory-cyan hover:underline">
+                Open Chat Matrix →
+              </Link>
+            </div>
+            <div className="space-y-1.5 p-2">
+              {meshEvents
+                .filter((event) => event.type === "HANDOFF" || event.type === "TASK_CONTRACT" || event.type === "AGENT_ENVELOPE")
+                .slice(-4)
+                .reverse()
+                .map((event) => (
+                  <div key={event.id} className="rounded-md border border-border/60 bg-secondary/50 px-2 py-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-[10px] font-medium">{event.title}</span>
+                      <span className="ml-auto font-mono text-[8px] text-muted-foreground">{timeAgo(event.at)}</span>
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-[9px] leading-relaxed text-muted-foreground">
+                      {event.message}
+                    </p>
+                  </div>
+                ))}
+              {!meshEvents.some((e) => e.type === "HANDOFF" || e.type === "TASK_CONTRACT" || e.type === "AGENT_ENVELOPE") && (
+                <p className="px-2 py-6 text-center text-[10px] text-muted-foreground">
+                  No agent activity yet. Start a conversation in the Chat Matrix.
+                </p>
+              )}
+            </div>
+          </section>
           <section className="panel flex min-h-0 flex-col">
             <div className="flex items-center justify-between border-b border-border/60 px-3 py-2.5">
               <span className="eyebrow flex items-center gap-1.5">
