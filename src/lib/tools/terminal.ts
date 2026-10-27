@@ -19,6 +19,7 @@ export interface RunCommandOptions {
   timeoutMs?: number;
   env?: Record<string, string>;
   allowlist?: boolean;
+  onOutput?: (stream: "stdout" | "stderr", chunk: string) => void;
 }
 
 const MAX_OUTPUT = 240_000;
@@ -71,9 +72,11 @@ export async function runCommand(
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout = append(stdout, chunk);
+      options.onOutput?.("stdout", chunk.toString("utf8"));
     });
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr = append(stderr, chunk);
+      options.onOutput?.("stderr", chunk.toString("utf8"));
     });
 
     const finish = (exitCode: number) => {

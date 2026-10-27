@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   ArrowUp,
   Bot,
@@ -21,27 +22,20 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useFactory } from "@/lib/store";
-import type { Agent, ChatMessage, ChatThread, DeadLoopInfo, GuardrailResult, Run } from "@/lib/types";
+import type { Agent } from "@/lib/types";
 import { cn, formatDuration, formatTokens, timeAgo } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { ModelBadge } from "@/components/shared/model-badge";
 import { MessageBubble } from "@/components/chat/message-bubble";
+import { MeshEventCard } from "@/components/chat/AgentChatMatrix";
+import { useChatSession } from "@/components/chat/use-chat-session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-
-interface ThreadSummary {
-  id: string;
-  title: string;
-  projectId?: string;
-  updatedAt: number;
-  messageCount: number;
-  lastMessage?: ChatMessage | null;
-}
 
 const SUGGESTIONS = [
   "@product draft a spec for a local-first bookmark manager with tags and search",
@@ -51,19 +45,40 @@ const SUGGESTIONS = [
 ];
 
 export default function ChatPage() {
-  const { agents, projects, settings, models, fetchRuns } = useFactory();
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const {
+    agents,
+    projects,
+    settings,
+    models,
+    meshEvents,
+    meshStatuses,
+    pausedAgentIds,
+    overriddenEventIds,
+    overrideValidator,
+    toggleAgentPause,
+  } = useFactory();
   const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
   const [autonomous, setAutonomous] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [handoff, setHandoff] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const {
+    threads,
+    threadId,
+    messages,
+    streaming,
+    handoff,
+    sessionTokens,
+    loadThreads,
+    openThread,
+    newThread: resetThread,
+    deleteThread,
+    send: sendMessage,
+    stop,
+    saveEditedMessage,
+    continueFromEditedMessage,
+  } = useChatSession();
 
   useEffect(() => {
     void loadThreads();
@@ -89,49 +104,12 @@ export default function ChatPage() {
     );
   }, [agents, mentionQuery]);
 
-  async function loadThreads() {
-    try {
-      const res = await fetch("/api/threads", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = (await res.json()) as { threads: ThreadSummary[] };
-      setThreads(data.threads);
-    } catch {
-      // non-critical
-    }
-  }
-
-  async function openThread(id: string) {
-    if (streaming) return;
-    setThreadId(id);
-    setHandoff(null);
-    try {
-      const res = await fetch(`/api/threads/${id}`, { cache: "no-store" });
-      if (!res.ok) throw new Error("Thread not found.");
-      const data = (await res.json()) as { thread: ChatThread };
-      setMessages(data.thread.messages);
-    } catch (error) {
-      toast.error(String(error));
-    }
-  }
-
   function newThread() {
     if (streaming) return;
-    setThreadId(null);
-    setMessages([]);
+    resetThread();
     setInput("");
-    setHandoff(null);
+    setMentionQuery(null);
     textareaRef.current?.focus();
-  }
-
-  async function deleteThread(id: string) {
-    if (streaming) return;
-    try {
-      await fetch(`/api/threads/${id}`, { method: "DELETE" });
-      setThreads((prev) => prev.filter((thread) => thread.id !== id));
-      if (threadId === id) newThread();
-    } catch (error) {
-      toast.error(String(error));
-    }
   }
 
   function insertMention(agent: Agent) {
@@ -157,226 +135,38 @@ export default function ChatPage() {
     setMentionQuery(match ? match[1].toLowerCase() : null);
   }
 
-  async function send() {
-    const message = input.trim();
+  async function submit(messageOverride?: string) {
+    const message = (messageOverride ?? input).trim();
     if (!message || streaming) return;
     if (autonomous && !projectId) {
       toast.error("Choose a project for the autonomous pipeline.");
       return;
     }
-    setStreaming(true);
     setInput("");
     setMentionQuery(null);
-    setHandoff(null);
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          threadId,
-          projectId: projectId || undefined,
-          message,
-          autonomous,
-          autoHandoff: settings?.autoHandoff ?? true,
-        }),
-      });
-      if (!res.ok || !res.body) {
-        const data = await res.json().catch(() => ({ error: "Chat request failed." }));
-        throw new Error(data.error ?? "Chat request failed.");
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-        for (const frame of frames) {
-          const lines = frame.split("\n");
-          const eventLine = lines.find((line) => line.startsWith("event:"));
-          const dataLines = lines.filter((line) => line.startsWith("data:"));
-          if (!eventLine || !dataLines.length) continue;
-          const eventName = eventLine.slice(6).trim();
-          const raw = dataLines.map((line) => line.slice(5).trim()).join("\n");
-          let payload: unknown;
-          try {
-            payload = JSON.parse(raw);
-          } catch {
-            continue;
-          }
-          handleSseEvent(eventName, payload);
-        }
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        toast.message("Generation stopped.");
-      } else {
-        toast.error(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      setStreaming(false);
-      abortRef.current = null;
-      await loadThreads();
-      if (threadId) {
-        const res = await fetch(`/api/threads/${threadId}`, { cache: "no-store" }).catch(() => null);
-        if (res?.ok) {
-          const data = (await res.json()) as { thread: ChatThread };
-          setMessages(data.thread.messages);
-        }
-      }
-    }
-  }
-
-  function handleSseEvent(event: string, payload: unknown) {
-    if (event === "thread") {
-      const { threadId: id } = payload as { threadId: string };
-      setThreadId(id);
-      return;
-    }
-    if (event === "message") {
-      const message = payload as ChatMessage;
-      setMessages((prev) => {
-        const index = prev.findIndex((item) => item.id === message.id);
-        if (index >= 0) {
-          const next = [...prev];
-          next[index] = message;
-          return next;
-        }
-        return [...prev, message];
-      });
-      return;
-    }
-    if (event === "agent") {
-      const data = payload as {
-        status: string;
-        agent: Agent;
-        messageId: string;
-        detail?: string;
-      };
-      if (data.status === "start") {
-        setMessages((prev) =>
-          prev.some((message) => message.id === data.messageId)
-            ? prev
-            : [
-                ...prev,
-                {
-                  id: data.messageId,
-                  role: "assistant",
-                  content: "",
-                  agentId: data.agent.id,
-                  agentName: data.agent.name,
-                  agentColor: data.agent.color,
-                  pending: true,
-                  createdAt: Date.now(),
-                },
-              ],
-        );
-      } else if (data.status === "fallback" || data.status === "retry") {
-        toast.message(data.detail ?? "Routing adjusted", { description: data.agent.name });
-      }
-      return;
-    }
-    if (event === "token") {
-      const data = payload as { messageId: string; delta: string; text: string };
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === data.messageId
-            ? { ...message, content: data.text, pending: true }
-            : message,
-        ),
-      );
-      return;
-    }
-    if (event === "metrics") {
-      const data = payload as {
-        messageId: string;
-        metrics: NonNullable<ChatMessage["metrics"]>;
-      };
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === data.messageId
-            ? { ...message, metrics: data.metrics, pending: false }
-            : message,
-        ),
-      );
-      return;
-    }
-    if (event === "handoff") {
-      const data = payload as { from: string; to: string; handle: string; reason: string };
-      setHandoff(`${data.from} → ${data.to}`);
-      toast.message("Agent handoff", { description: `${data.from} passed the payload to ${data.to}.` });
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `handoff-${Date.now()}`,
-          role: "system",
-          content: `**${data.from}** handed off to **${data.to}** (@${data.handle}). ${data.reason}.`,
-          createdAt: Date.now(),
-        },
-      ]);
-      return;
-    }
-    if (event === "guardrail") {
-      const data = payload as { result: GuardrailResult };
-      toast[data.result.passed ? "success" : "warning"](
-        `Guardrail ${data.result.score}/100`,
-        {
-          description:
-            data.result.errors[0] ??
-            `${data.result.sourceAgent} → ${data.result.targetAgent}`,
-        },
-      );
-      return;
-    }
-    if (event === "dead_loop") {
-      const data = payload as { result?: GuardrailResult; deadLoop?: DeadLoopInfo };
-      const info = data.deadLoop ?? data.result?.deadLoop;
-      setHandoff("Pipeline frozen");
-      toast.error("Dead loop detected", {
-        description: info?.message ?? "Pipeline frozen for user review.",
-      });
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `dead-loop-${Date.now()}`,
-          role: "system",
-          content: `**Dead loop detected — pipeline frozen.** ${info?.message ?? ""}`,
-          createdAt: Date.now(),
-          error: true,
-        },
-      ]);
-      return;
-    }
-    if (event === "run") {
-      const { run } = payload as { run: Run };
-      void fetchRuns();
-      toast.success("Pipeline launched", { description: "Watch the agents in the Pipeline view." });
-      return;
-    }
-    if (event === "error") {
-      const data = payload as { message: string; messageId?: string };
-      if (data.messageId) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.id === data.messageId
-              ? { ...message, pending: false, error: true, content: message.content || data.message }
-              : message,
-          ),
-        );
-      }
-      toast.error(data.message);
-    }
+    const ok = await sendMessage(message, {
+      projectId: projectId || undefined,
+      autonomous,
+    });
+    if (!ok) setInput(message);
   }
 
   const activeThread = threads.find((thread) => thread.id === threadId);
+  const liveEvents = useMemo(
+    () =>
+      meshEvents
+        .filter(
+          (event) =>
+            event.type !== "AGENT_STATUS" &&
+            (!event.threadId || !threadId || event.threadId === threadId),
+        )
+        .slice(-10),
+    [meshEvents, threadId],
+  );
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => !message.handoffFrom),
+    [messages],
+  );
 
   return (
     <div>
@@ -409,7 +199,7 @@ export default function ChatPage() {
               <span className="eyebrow">Threads</span>
               <button
                 onClick={newThread}
-                className="rounded p-0.5 text-muted-foreground hover:bg-white/5 hover:text-foreground"
+                className="rounded p-0.5 text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
                 aria-label="New thread"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -422,7 +212,7 @@ export default function ChatPage() {
                     key={thread.id}
                     className={cn(
                       "group flex items-start gap-1 rounded-md px-2 py-2 transition-colors",
-                      thread.id === threadId ? "bg-factory-lime/10" : "hover:bg-white/5",
+                      thread.id === threadId ? "bg-factory-lime/10" : "hover:bg-secondary/50",
                     )}
                   >
                     <button
@@ -438,7 +228,7 @@ export default function ChatPage() {
                         {thread.title}
                       </div>
                       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[8px] text-muted-foreground">
-                        <span>{thread.messageCount} msg</span>
+                        <span>{(thread.directMessageCount ?? thread.messageCount)} msg</span>
                         <span>·</span>
                         <span>{timeAgo(thread.updatedAt)}</span>
                       </div>
@@ -494,7 +284,7 @@ export default function ChatPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <div className="flex items-center gap-1.5 rounded-md border border-border/70 bg-black/20 px-2 py-1">
+              <div className="flex items-center gap-1.5 rounded-md border border-border/70 bg-secondary/50 px-2 py-1">
                 <span className="font-mono text-[9px] text-muted-foreground">AUTO</span>
                 <Switch checked={autonomous} onCheckedChange={setAutonomous} className="h-4 w-7 [&>span]:h-3 [&>span]:w-3" />
               </div>
@@ -502,13 +292,15 @@ export default function ChatPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 py-4 md:px-4">
-            {messages.length ? (
+            {visibleMessages.length ? (
               <div className="space-y-4">
-                {messages.map((message) => (
+                {visibleMessages.map((message) => (
                   <MessageBubble
                     key={message.id}
                     message={message}
                     streaming={streaming && message.pending}
+                    onEdit={saveEditedMessage}
+                    onContinueEdit={continueFromEditedMessage}
                   />
                 ))}
                 <div ref={bottomRef} />
@@ -531,7 +323,7 @@ export default function ChatPage() {
                         setInput(suggestion);
                         textareaRef.current?.focus();
                       }}
-                      className="rounded-lg border border-border/70 bg-black/20 px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground transition-colors hover:border-factory-lime/30 hover:text-foreground"
+                      className="rounded-lg border border-border/70 bg-secondary/50 px-3 py-2 text-left text-[11px] leading-relaxed text-muted-foreground transition-colors hover:border-factory-lime/30 hover:text-foreground"
                     >
                       {suggestion}
                     </button>
@@ -542,7 +334,7 @@ export default function ChatPage() {
                     <button
                       key={agent.id}
                       onClick={() => insertMention(agent)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-1 font-mono text-[9px] text-muted-foreground hover:border-white/20 hover:text-foreground"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-1 font-mono text-[9px] text-muted-foreground hover:border-factory-lime/30 hover:text-foreground"
                     >
                       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: agent.color }} />
                       @{agent.handle}
@@ -553,7 +345,7 @@ export default function ChatPage() {
             )}
           </div>
 
-          <div className="relative border-t border-border/60 bg-black/10 p-2.5">
+          <div className="relative border-t border-border/60 bg-secondary/50 p-2.5">
             {mentionQuery !== null && filteredAgents.length > 0 && (
               <div className="absolute bottom-full left-2.5 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
                 <div className="border-b border-border/60 px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
@@ -584,7 +376,7 @@ export default function ChatPage() {
                   if (event.key === "Escape") setMentionQuery(null);
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    void send();
+                    void submit();
                   }
                 }}
                 rows={2}
@@ -600,14 +392,14 @@ export default function ChatPage() {
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => abortRef.current?.abort()}
+                    onClick={() => stop()}
                     className="h-8"
                   >
                     <Square className="h-3 w-3" />
                     Stop
                   </Button>
                 ) : (
-                  <Button size="sm" onClick={() => void send()} disabled={!input.trim()} className="h-8">
+                  <Button size="sm" onClick={() => void submit()} disabled={!input.trim()} className="h-8">
                     {autonomous ? <Rocket className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
                     {autonomous ? "Run" : "Send"}
                   </Button>
@@ -638,13 +430,16 @@ export default function ChatPage() {
               <div className="space-y-1 p-2">
                 {agents.map((agent) => {
                   const model = models.find((item) => item.key === agent.modelKey);
+                  const status = pausedAgentIds.includes(agent.id)
+                    ? "paused"
+                    : meshStatuses[agent.id]?.status ?? "idle";
                   return (
                     <button
                       key={agent.id}
                       onClick={() => insertMention(agent)}
                       disabled={!agent.enabled}
                       className={cn(
-                        "w-full rounded-lg border border-transparent px-2 py-2 text-left transition-colors hover:border-border hover:bg-white/[0.03]",
+                        "w-full rounded-lg border border-transparent px-2 py-2 text-left transition-colors hover:border-border hover:bg-secondary/50",
                         !agent.enabled && "opacity-40",
                       )}
                     >
@@ -652,7 +447,11 @@ export default function ChatPage() {
                         <AgentAvatar name={agent.name} color={agent.color} icon={agent.icon} size="sm" />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[11px] font-medium">{agent.name}</div>
-                          <div className="font-mono text-[8px] text-muted-foreground">@{agent.handle}</div>
+                          <div className="flex items-center gap-1 font-mono text-[8px] text-muted-foreground">
+                            <span>@{agent.handle}</span>
+                            <span>·</span>
+                            <span className={cn(status !== "idle" && "text-factory-cyan")}>{status}</span>
+                          </div>
                         </div>
                         <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: agent.color }} />
                       </div>
@@ -679,11 +478,32 @@ export default function ChatPage() {
                 <span className="flex items-center gap-1"><Cpu className="h-3 w-3" /> VRAM guard</span>
                 <span>serialized</span>
               </div>
-              <div className="rounded-md border border-border/60 bg-black/20 p-2 text-[9px] leading-relaxed text-muted-foreground">
+              <div className="rounded-md border border-border/60 bg-secondary/50 p-2 text-[9px] leading-relaxed text-muted-foreground">
                 Mentions route the next turn. Agent replies can mention another specialist to trigger
                 an automatic handoff. The payload and original brief travel with the handoff.
               </div>
             </div>
+            {liveEvents.length > 0 && (
+              <div className="border-t border-border/60 p-2">
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <span className="eyebrow">Live mesh events</span>
+                  <Link href="/mesh" className="font-mono text-[9px] text-factory-cyan hover:underline">Mesh Hub</Link>
+                </div>
+                <ScrollArea className="max-h-[260px]">
+                  <div className="space-y-1.5">
+                    {liveEvents.map((item) => (
+                      <MeshEventCard
+                        key={item.id}
+                        event={item}
+                        agents={agents}
+                        overridden={overriddenEventIds.includes(item.id)}
+                        onOverride={() => void overrideValidator(item.id, item.agentId, "Approved from chat thread.")}
+                      />
+                    ))}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
           </div>
         </aside>
       </div>

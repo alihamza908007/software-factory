@@ -202,7 +202,7 @@ export default function ProjectsPage() {
                 />
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-start gap-2.5">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-black/20 text-factory-cyan">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/50 text-factory-cyan">
                       <Boxes className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
@@ -219,7 +219,7 @@ export default function ProjectsPage() {
                   {project.description}
                 </p>
 
-                <div className="mt-3 rounded-md border border-border/50 bg-black/20 px-2.5 py-1.5 font-mono text-[9px] text-muted-foreground">
+                <div className="mt-3 rounded-md border border-border/50 bg-secondary/50 px-2.5 py-1.5 font-mono text-[9px] text-muted-foreground">
                   <div className="truncate">{project.workspacePath}</div>
                 </div>
 
@@ -449,7 +449,7 @@ export default function ProjectsPage() {
                             onClick={() => void loadFile(detail, file)}
                             className={cn(
                               "flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left font-mono text-[10px] transition-colors",
-                              selectedFile === file ? "bg-factory-lime/10 text-factory-lime" : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                              selectedFile === file ? "bg-factory-lime/10 text-factory-lime" : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
                             )}
                           >
                             <FileCode2 className="h-3 w-3 shrink-0" />
@@ -476,7 +476,7 @@ export default function ProjectsPage() {
                       <Link
                         key={run.id}
                         href={`/pipeline?run=${run.id}`}
-                        className="flex items-center gap-3 border-b border-border/40 px-3 py-2.5 last:border-0 hover:bg-white/[0.03]"
+                        className="flex items-center gap-3 border-b border-border/40 px-3 py-2.5 last:border-0 hover:bg-secondary/50"
                       >
                         <StatusPill status={run.status} />
                         <span className="min-w-0 flex-1 truncate text-[11px]">{run.prompt}</span>

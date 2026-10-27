@@ -24,12 +24,13 @@ export function launchRunDialog(projectId?: string) {
 
 export function GlobalRunLauncher() {
   const router = useRouter();
-  const { projects, settings, fetchProjects, fetchRuns } = useFactory();
+  const { projects, settings, activePipelineTopology, fetchProjects, fetchRuns } = useFactory();
   const [open, setOpen] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [prompt, setPrompt] = useState("");
   const [attempts, setAttempts] = useState(3);
   const [push, setPush] = useState(false);
+  const [allowConcurrency, setAllowConcurrency] = useState(false);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -93,13 +94,17 @@ export function GlobalRunLauncher() {
           projectId,
           prompt,
           maxHealAttempts: attempts,
+          allowConcurrency,
           pushToGitHub: push,
+          pipelineTopology: activePipelineTopology ?? undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not launch run.");
       toast.success("Factory started", {
-        description: "Five agents are spinning up the SDLC pipeline.",
+        description: activePipelineTopology
+          ? `Starting the active ${activePipelineTopology.nodes.length}-node SDLC graph.`
+          : "Five agents are spinning up the standard SDLC pipeline.",
       });
       setOpen(false);
       setPrompt("");
@@ -151,7 +156,7 @@ export function GlobalRunLauncher() {
           </div>
 
           {!projects.length && (
-            <div className="grid gap-3 rounded-lg border border-border/70 bg-black/20 p-3 sm:grid-cols-[1fr_140px_auto]">
+            <div className="grid gap-3 rounded-lg border border-border/70 bg-secondary/50 p-3 sm:grid-cols-[1fr_140px_auto]">
               <div className="grid gap-1.5">
                 <Label>Project name</Label>
                 <Input
@@ -184,6 +189,11 @@ export function GlobalRunLauncher() {
 
           <div className="grid gap-1.5">
             <Label>Build brief</Label>
+            {activePipelineTopology && (
+              <div className="rounded-md border border-factory-cyan/20 bg-factory-cyan/5 px-2.5 py-1.5 font-mono text-[10px] text-factory-cyan">
+                Active canvas blueprint · {activePipelineTopology.nodes.length} nodes · {activePipelineTopology.edges.length} connections
+              </div>
+            )}
             <Textarea
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
@@ -197,8 +207,8 @@ export function GlobalRunLauncher() {
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="flex items-center justify-between rounded-lg border border-border/70 bg-black/20 px-3 py-2.5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5">
               <div>
                 <div className="text-xs font-medium">Self-heal budget</div>
                 <div className="text-[10px] text-muted-foreground">Max repair loops</div>
@@ -212,7 +222,7 @@ export function GlobalRunLauncher() {
                 className="h-8 w-16 text-center font-mono"
               />
             </div>
-            <div className="flex items-center justify-between rounded-lg border border-border/70 bg-black/20 px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5">
               <div>
                 <div className="flex items-center gap-1.5 text-xs font-medium">
                   <GitPullRequest className="h-3.5 w-3.5 text-factory-cyan" />
@@ -223,6 +233,13 @@ export function GlobalRunLauncher() {
                 </div>
               </div>
               <Switch checked={push} onCheckedChange={setPush} disabled={!settings?.hasGithubToken} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5">
+              <div>
+                <div className="text-xs font-medium">Parallel verification</div>
+                <div className="text-[10px] text-muted-foreground">Run lint and tests together</div>
+              </div>
+              <Switch checked={allowConcurrency} onCheckedChange={setAllowConcurrency} />
             </div>
           </div>
         </div>

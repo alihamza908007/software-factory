@@ -1,6 +1,6 @@
 import { apiError, json } from "@/lib/api";
 import { getRun } from "@/lib/db";
-import { cancelRun, isRunActive, rerunPhase } from "@/lib/orchestrator/engine";
+import { cancelRun, isRunActive, rerunPhase, resumeRun } from "@/lib/orchestrator/engine";
 import type { PhaseId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -30,6 +30,10 @@ export async function POST(
     if (body.action === "cancel") {
       const cancelled = await cancelRun(id);
       return json({ ok: cancelled });
+    }
+    if (body.action === "resume") {
+      const run = await resumeRun(id);
+      return json({ run }, { status: 202 });
     }
     if (body.action === "rerun" && body.phaseId) {
       const run = await rerunPhase(id, body.phaseId);

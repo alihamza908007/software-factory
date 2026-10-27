@@ -1,4 +1,4 @@
-import { writeProjectFile } from "../workspace";
+import { invalidateWorkspaceCache, writeProjectFile } from "../workspace";
 
 export interface ParsedFile {
   path: string;
@@ -89,6 +89,7 @@ export async function applyFileBlocks(
       errors.push({ path: file.path, error: String(error) });
     }
   }
+  if (written.length) invalidateWorkspaceCache(root);
   return { written, errors };
 }
 

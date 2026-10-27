@@ -70,11 +70,13 @@ export default function SettingsPage() {
     models,
     agents,
     health,
+    systemProfile,
     resources,
     resolvedOpencodeUrl,
     fetchSettings,
     fetchModels,
     fetchHealth,
+    fetchSystemProfile,
     fetchResources,
   } = useFactory();
   const [draft, setDraft] = useState<SettingsState | null>(null);
@@ -97,19 +99,14 @@ export default function SettingsPage() {
   }, [settings]);
 
   useEffect(() => {
+    void fetchSystemProfile();
+  }, [fetchSystemProfile]);
+
+  useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("factory:provider-keys");
-      if (raw) {
-        const parsed = JSON.parse(raw) as Partial<Record<ApiKeyName, string>>;
-        setApiKeys((current) => ({
-          openrouter: parsed.openrouter ?? current.openrouter,
-          anthropic: parsed.anthropic ?? current.anthropic,
-          openai: parsed.openai ?? current.openai,
-          gemini: parsed.gemini ?? current.gemini,
-        }));
-      }
+      window.localStorage.removeItem("factory:provider-keys");
     } catch {
-      // ignore malformed local cache
+      // Browser storage may be disabled.
     }
     void loadProviders();
   }, []);
@@ -190,11 +187,7 @@ export default function SettingsPage() {
         hasGeminiApiKey:
           data.settings.hasGeminiApiKey ?? Boolean(draft.hasGeminiApiKey || apiKeys.gemini),
       });
-      try {
-        window.localStorage.setItem("factory:provider-keys", JSON.stringify(apiKeys));
-      } catch {
-        // localStorage can be disabled
-      }
+      setApiKeys({ openrouter: "", anthropic: "", openai: "", gemini: "" });
       setOpencodePassword("");
       setGithubToken("");
       await Promise.all([fetchSettings(), fetchModels(true), fetchHealth(), fetchResources(), loadProviders()]);
@@ -245,14 +238,7 @@ export default function SettingsPage() {
       setDraft((current) =>
         current ? { ...current, [field.hasKey]: false } : current,
       );
-      try {
-        const raw = window.localStorage.getItem("factory:provider-keys");
-        const parsed = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-        delete parsed[field.name];
-        window.localStorage.setItem("factory:provider-keys", JSON.stringify(parsed));
-      } catch {
-        // ignore
-      }
+      setApiKeys((current) => ({ ...current, [field.name]: "" }));
       await Promise.all([fetchSettings(), fetchModels(true), loadProviders()]);
       toast.success(`${field.label} key cleared.`);
     } catch (error) {
@@ -367,17 +353,10 @@ export default function SettingsPage() {
                 </p>
               </div>
               <div className="grid gap-1.5">
-                <Label>Max concurrent heavy models</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="4"
-                  value={draft.maxConcurrentHeavy}
-                  onChange={(event) => set("maxConcurrentHeavy", Number(event.target.value))}
-                  className="font-mono"
-                />
+                <Label>Concurrent heavy local models</Label>
+                <Input value="1" readOnly className="font-mono" />
                 <p className="text-[10px] text-muted-foreground">
-                  1 is the safe default for a single 27B model on 48 GB. Raising this is an explicit concurrency override.
+                  Heavy local generations run one at a time. Cloud and eligible light local generations remain concurrent.
                 </p>
               </div>
               <div className="grid gap-1.5">
@@ -450,7 +429,7 @@ export default function SettingsPage() {
             </SectionLabel>
 
             <div className="grid gap-4">
-              <div className="rounded-lg border border-border/60 bg-black/20 p-3">
+              <div className="rounded-lg border border-border/60 bg-secondary/50 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-xs font-medium"><Cpu className="h-3.5 w-3.5 text-factory-amber" /> Ollama</span>
                   <Badge variant={health?.ollama.online ? "success" : "destructive"}>
@@ -471,7 +450,7 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <div className="rounded-lg border border-border/60 bg-black/20 p-3">
+              <div className="rounded-lg border border-border/60 bg-secondary/50 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-xs font-medium"><Cloud className="h-3.5 w-3.5 text-factory-cyan" /> OpenCode cloud</span>
                   <Badge variant={health?.opencode.online ? "success" : "destructive"}>
@@ -511,7 +490,7 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <div className="rounded-lg border border-border/60 bg-black/20 p-3">
+              <div className="rounded-lg border border-border/60 bg-secondary/50 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="flex items-center gap-2 text-xs font-medium">
                     <Server className="h-3.5 w-3.5 text-factory-lime" /> LM Studio
@@ -559,7 +538,7 @@ export default function SettingsPage() {
                 const provider = providers.find((item) => item.provider === field.provider);
                 const hasKey = Boolean(draft[field.hasKey]);
                 return (
-                  <div key={field.name} className="rounded-lg border border-border/60 bg-black/20 p-3">
+                  <div key={field.name} className="rounded-lg border border-border/60 bg-secondary/50 p-3">
                     <div className="mb-2 flex items-center justify-between">
                       <span className="flex items-center gap-2 text-xs font-medium">
                         <KeyRound className="h-3.5 w-3.5 text-factory-cyan" />
@@ -598,9 +577,8 @@ export default function SettingsPage() {
               })}
             </div>
             <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
-              Keys are saved locally in <span className="font-mono">.data/factory.json</span>, mirrored to{" "}
-              <span className="font-mono">.env.local</span> with mode 600 and cached in this browser&apos;s
-              localStorage so the form survives reloads. The browser cache is not an encrypted secret store.
+              Keys are stored by the local server in <span className="font-mono">.data/factory.json</span> and mirrored to{" "}
+              <span className="font-mono">.env.local</span>. They are never cached in browser storage. Existing credentials are retained unless replaced or cleared.
             </p>
           </section>
 
@@ -719,7 +697,7 @@ export default function SettingsPage() {
                 <select
                   value={draft.defaultAgentId}
                   onChange={(event) => set("defaultAgentId", event.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-black/20 px-3 text-sm"
+                  className="flex h-9 w-full rounded-md border border-input bg-secondary/50 px-3 text-sm"
                 >
                   <option value="">Auto · Product Manager</option>
                   {agents.map((agent) => (
@@ -814,6 +792,11 @@ export default function SettingsPage() {
           <section className="panel p-4">
             <SectionLabel>Hardware telemetry</SectionLabel>
             <div className="space-y-3">
+              {systemProfile && (
+                <Badge variant="outline" className="w-full justify-center border-factory-lime/25 text-factory-lime">
+                  Hardware Optimizer Active · {systemProfile.label}
+                </Badge>
+              )}
               <div className="flex items-center gap-2">
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-factory-lime/20 bg-factory-lime/5 text-factory-lime">
                   <Cpu className="h-4 w-4" />
@@ -854,6 +837,7 @@ export default function SettingsPage() {
                 <div className="flex justify-between"><span className="text-muted-foreground">Running</span><span>{resources?.running.length ?? 0}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Queued</span><span>{resources?.queued.length ?? 0}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Heavy slots</span><span>{resources?.heavyRunning ?? 0}/{resources?.maxConcurrentHeavy ?? 1}</span></div>
+                {systemProfile && <div className="flex justify-between"><span className="text-muted-foreground">Context / threads</span><span>{systemProfile.contextWindow.toLocaleString()} / {systemProfile.threadCount}</span></div>}
               </div>
               <Button variant="outline" size="sm" className="w-full" onClick={resetQueue}>
                 <Trash2 className="h-3.5 w-3.5" />
@@ -939,7 +923,7 @@ function ToggleRow({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-black/20 px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-secondary/50 px-3 py-2.5">
       <div className="flex items-start gap-2">
         {icon && <span className="mt-0.5 text-muted-foreground">{icon}</span>}
         <div>

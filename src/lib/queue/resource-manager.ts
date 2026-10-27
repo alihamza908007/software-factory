@@ -1,6 +1,7 @@
 import { getSettings } from "../db";
 import type { ModelInfo, ResourceReservation, ResourceSnapshot } from "../types";
 import { uid } from "../utils";
+import { getHardwareProfile } from "../system/hardware-profiler";
 
 interface AcquireOptions {
   model: ModelInfo;
@@ -48,19 +49,20 @@ class ResourceQueueManager {
 
   async snapshot(): Promise<ResourceSnapshot> {
     const settings = await getSettings();
-    const budgetMB = Math.max(1024, settings.vramBudgetMB - settings.reserveMB);
+    const profile = getHardwareProfile();
+    const budgetMB = Math.max(1024, Math.min(settings.vramBudgetMB - settings.reserveMB, profile.localBudgetMB));
     const running = Array.from(this.running.values());
     const usedMB = running.reduce((sum, item) => sum + item.vramMB, 0);
     return {
       budgetMB: settings.vramBudgetMB,
-      reserveMB: settings.reserveMB,
+      reserveMB: settings.vramBudgetMB - budgetMB,
       usedMB,
       availableMB: Math.max(0, budgetMB - usedMB),
       running,
       queued: this.queue.map((waiter) => waiter.reservation),
       history: this.history.slice(0, 30),
       heavyRunning: running.filter((item) => item.heavy).length,
-      maxConcurrentHeavy: settings.maxConcurrentHeavy,
+      maxConcurrentHeavy: profile.maxConcurrentHeavy,
       allowConcurrentLight: settings.allowConcurrentLight,
       updatedAt: Date.now(),
     };
@@ -70,13 +72,15 @@ class ResourceQueueManager {
     // Cloud providers do not consume local unified memory.
     if (reservation.provider !== "ollama" && reservation.provider !== "lmstudio") return true;
     const used = Array.from(this.running.values()).reduce((sum, item) => sum + item.vramMB, 0);
-    const budget = this.lastBudgetMB ?? 36_864;
+    const budget = this.lastBudgetMB ?? getHardwareProfile().localBudgetMB;
     const heavyRunning = Array.from(this.running.values()).filter((item) => item.heavy).length;
     const lightRunning = Array.from(this.running.values()).filter(
       (item) => !item.heavy && (item.provider === "ollama" || item.provider === "lmstudio"),
     ).length;
-    const maxHeavy = this.lastMaxHeavy ?? 1;
-    const maxLight = this.lastMaxLight ?? 2;
+    // Heavy local generations are serialized for the 48 GB Apple Silicon target.
+    const profile = getHardwareProfile();
+    const maxHeavy = profile.maxConcurrentHeavy;
+    const maxLight = Math.min(this.lastMaxLight ?? profile.maxConcurrentLight, profile.maxConcurrentLight);
     const allowConcurrentLight = this.lastAllowConcurrentLight ?? true;
 
     if (reservation.heavy && heavyRunning >= maxHeavy) return false;
@@ -88,15 +92,14 @@ class ResourceQueueManager {
   }
 
   private lastBudgetMB?: number;
-  private lastMaxHeavy?: number;
   private lastMaxLight?: number;
   private lastAllowConcurrentLight?: boolean;
 
   async refreshPolicy() {
     const settings = await getSettings();
-    this.lastBudgetMB = Math.max(1024, settings.vramBudgetMB - settings.reserveMB);
-    this.lastMaxHeavy = settings.maxConcurrentHeavy;
-    this.lastMaxLight = settings.maxConcurrentLight;
+    const profile = getHardwareProfile();
+    this.lastBudgetMB = Math.max(1024, Math.min(settings.vramBudgetMB - settings.reserveMB, profile.localBudgetMB));
+    this.lastMaxLight = Math.min(settings.maxConcurrentLight, profile.maxConcurrentLight);
     this.lastAllowConcurrentLight = settings.allowConcurrentLight;
   }
 
@@ -112,6 +115,16 @@ class ResourceQueueManager {
       reservation.startedAt = Date.now();
       this.running.set(reservation.id, reservation);
       return reservation;
+    }
+
+    const profile = getHardwareProfile();
+    if (profile.restrictHeavyLocalModels && options.model.heavy) {
+      if (canFallback && (!fallback.heavy || (fallback.provider !== "ollama" && fallback.provider !== "lmstudio"))) {
+        const reservation = makeReservation(options, fallback, `${profile.label}: routed heavy local model to ${fallback.name}.`);
+        this.start(reservation);
+        return reservation;
+      }
+      throw new Error(`${profile.label}: heavy local models are disabled; choose a cloud or lightweight local model.`);
     }
 
     if (this.canRun(makeReservation(options, options.model))) {

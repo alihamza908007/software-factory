@@ -21,6 +21,7 @@ import {
   Loader2,
   Play,
   Plus,
+  Pencil,
   RefreshCw,
   Rocket,
   Terminal,
@@ -55,6 +56,8 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 const PHASE_ORDER: PhaseId[] = ["requirements", "architecture", "implementation", "testing", "deployment"];
 
@@ -68,6 +71,8 @@ export default function PipelinePage() {
   const [filter, setFilter] = useState<"all" | "active" | "passed" | "failed">("all");
   const [expanded, setExpanded] = useState<PhaseId | null>("implementation");
   const [canvasOnly, setCanvasOnly] = useState(false);
+  const [artifactEdit, setArtifactEdit] = useState<{ path: string; phaseId: PhaseId; content: string } | null>(null);
+  const [artifactBusy, setArtifactBusy] = useState(false);
   const queryApplied = useRef(false);
 
   useEffect(() => {
@@ -259,6 +264,57 @@ export default function PipelinePage() {
     }
   }
 
+  async function openArtifactEditor(path: string, phaseId: PhaseId) {
+    if (!run) return;
+    setArtifactBusy(true);
+    try {
+      const response = await fetch(`/api/projects/${run.projectId}/files?file=${encodeURIComponent(path)}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not load artifact.");
+      setArtifactEdit({ path, phaseId, content: data.content });
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setArtifactBusy(false);
+    }
+  }
+
+  async function saveArtifact(resume: boolean) {
+    if (!run || !artifactEdit) return;
+    setArtifactBusy(true);
+    try {
+      const response = await fetch(`/api/projects/${run.projectId}/files`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file: artifactEdit.path, content: artifactEdit.content }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not save artifact.");
+      if (resume) {
+        const nextPhase: PhaseId = artifactEdit.phaseId === "requirements" || artifactEdit.phaseId === "architecture"
+          ? "implementation"
+          : artifactEdit.phaseId === "implementation"
+            ? "testing"
+            : artifactEdit.phaseId;
+        const rerun = await fetch(`/api/runs/${run.id}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "rerun", phaseId: nextPhase }),
+        });
+        const rerunData = await rerun.json();
+        if (!rerun.ok) throw new Error(rerunData.error ?? "Artifact saved, but the next phase could not be started.");
+        setRun(rerunData.run as Run);
+        await fetchRuns();
+      }
+      toast.success(resume ? "Artifact saved; next phase resumed." : "Artifact saved to the project workspace.");
+      setArtifactEdit(null);
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setArtifactBusy(false);
+    }
+  }
+
   async function rerun(phaseId: PhaseId) {
     if (!run) return;
     setBusy(true);
@@ -347,7 +403,7 @@ export default function PipelinePage() {
                       "w-full rounded-md border border-transparent px-2 py-2 text-left transition-colors",
                       item.id === selectedId
                         ? "border-factory-lime/20 bg-factory-lime/10"
-                        : "hover:bg-white/5",
+                        : "hover:bg-secondary/50",
                     )}
                   >
                     <div className="flex items-center gap-1.5">
@@ -360,7 +416,7 @@ export default function PipelinePage() {
                               ? "bg-factory-lime/60"
                               : item.status === "failed"
                                 ? "bg-factory-red"
-                                : "bg-white/20",
+                                : "bg-muted-foreground",
                         )}
                       />
                       <span className="truncate font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
@@ -580,7 +636,7 @@ export default function PipelinePage() {
                     <TabsTrigger value="canvas">Canvas DAG</TabsTrigger>
                   </TabsList>
                   <div className="flex items-center gap-2 font-mono text-[9px] text-muted-foreground">
-                    <span className={cn("h-1.5 w-1.5 rounded-full", running ? "animate-pulse bg-factory-lime" : "bg-white/20")} />
+                    <span className={cn("h-1.5 w-1.5 rounded-full", running ? "animate-pulse bg-factory-lime" : "bg-muted-foreground")} />
                     {running ? "streaming" : "snapshot"}
                     <span>·</span>
                     <span>{resources?.heavyRunning ?? 0} local generations</span>
@@ -616,7 +672,7 @@ export default function PipelinePage() {
                         <div key={phase.id}>
                           <button
                             onClick={() => setExpanded(isOpen ? null : phase.id)}
-                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-white/[0.02]"
+                            className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-secondary/50"
                           >
                             <div className="flex w-6 shrink-0 flex-col items-center">
                               <span
@@ -661,14 +717,14 @@ export default function PipelinePage() {
                             <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", isOpen && "rotate-180")} />
                           </button>
                           {isOpen && state && (
-                            <div className="border-t border-border/40 bg-black/20 px-4 py-3">
+                            <div className="border-t border-border/40 bg-secondary/50 px-4 py-3">
                               <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">{phase.description}</p>
                               {!!state.artifacts.length && (
                                 <div className="mb-3 flex flex-wrap gap-1.5">
                                   {state.artifacts.map((artifact) => (
-                                    <Badge key={artifact} variant="outline">
-                                      <FileCode2 className="h-2.5 w-2.5" /> {artifact}
-                                    </Badge>
+                                    <Button key={artifact} size="sm" variant="outline" className="h-7 max-w-full font-mono text-[9px]" onClick={() => void openArtifactEditor(artifact, phase.id)} disabled={artifactBusy}>
+                                      <FileCode2 className="h-2.5 w-2.5" /> <span className="truncate">{artifact}</span><Pencil className="h-2.5 w-2.5" />
+                                    </Button>
                                   ))}
                                 </div>
                               )}
@@ -697,14 +753,14 @@ export default function PipelinePage() {
                                       <div className="mt-1 font-mono text-[9px] text-muted-foreground">
                                         {attempt.appliedFiles.join(", ") || "no files applied"}
                                       </div>
-                                      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-black/40 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+                                      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-secondary/50 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
                                         {attempt.failureSummary}
                                       </pre>
                                     </div>
                                   ))}
                                 </div>
                               )}
-                              <div className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-border/50 bg-black/30 p-2.5 font-mono">
+                              <div className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-border/50 bg-secondary/50 p-2.5 font-mono">
                                 {state.logs.slice(-30).map((log) => (
                                   <div key={log.id} className="flex gap-2 text-[10px] leading-relaxed">
                                     <span
@@ -718,7 +774,7 @@ export default function PipelinePage() {
                                               ? "bg-factory-amber"
                                               : log.level === "command"
                                                 ? "bg-factory-cyan"
-                                                : "bg-white/25",
+                                                : "bg-muted-foreground",
                                       )}
                                     />
                                     <div className="min-w-0">
@@ -824,7 +880,7 @@ export default function PipelinePage() {
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   ) : (
-                    <div className="mt-3 rounded-lg border border-border/60 bg-black/20 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                    <div className="mt-3 rounded-lg border border-border/60 bg-secondary/50 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
                       {pr?.error ?? "Configure GitHub in Settings to push the branch and draft a pull request."}
                     </div>
                   )}
@@ -866,6 +922,29 @@ export default function PipelinePage() {
         </div>
       </div>
       )}
+      <Dialog open={Boolean(artifactEdit)} onOpenChange={(open) => !open && !artifactBusy && setArtifactEdit(null)}>
+        <DialogContent className="flex max-h-[92vh] max-w-5xl flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Pencil className="h-4 w-4 text-factory-cyan" />Edit pipeline artifact</DialogTitle>
+            <DialogDescription className="font-mono">{artifactEdit?.path} · edits are written to the project workspace.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={artifactEdit?.content ?? ""}
+            onChange={(event) => setArtifactEdit((current) => current ? { ...current, content: event.target.value } : current)}
+            className="min-h-[45vh] flex-1 resize-y font-mono text-xs leading-relaxed"
+            spellCheck={false}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setArtifactEdit(null)} disabled={artifactBusy}>Cancel</Button>
+            <Button variant="outline" onClick={() => void saveArtifact(false)} disabled={artifactBusy}>
+              {artifactBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Pencil className="h-4 w-4" />}Save artifact
+            </Button>
+            <Button onClick={() => void saveArtifact(true)} disabled={artifactBusy || run?.status === "running" || run?.status === "queued"}>
+              {artifactBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}Save & resume next phase
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -930,7 +1009,7 @@ function PhaseColumn({
         {!!phase?.artifacts.length && (
           <div className="flex flex-wrap gap-1">
             {phase.artifacts.slice(0, 3).map((artifact) => (
-              <span key={artifact} className="max-w-full truncate rounded border border-border/60 bg-black/30 px-1.5 py-0.5 font-mono text-[8px] text-muted-foreground">
+              <span key={artifact} className="max-w-full truncate rounded border border-border/60 bg-secondary/50 px-1.5 py-0.5 font-mono text-[8px] text-muted-foreground">
                 {artifact}
               </span>
             ))}
@@ -963,7 +1042,7 @@ function PhaseColumn({
                       ? "bg-factory-lime"
                       : log.level === "warn"
                         ? "bg-factory-amber"
-                        : "bg-white/25",
+                        : "bg-muted-foreground",
                 )}
               />
               <span className="line-clamp-2 text-muted-foreground">{log.message}</span>
@@ -979,7 +1058,7 @@ function PhaseColumn({
       </div>
       <button
         onClick={() => onInspect(phaseId)}
-        className="flex items-center justify-between border-t border-border/60 px-3 py-2 font-mono text-[8px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-white/[0.03] hover:text-foreground"
+        className="flex items-center justify-between border-t border-border/60 px-3 py-2 font-mono text-[8px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
       >
         Inspect trace
         <ChevronRight className="h-3 w-3" />
@@ -1065,7 +1144,7 @@ function AllLogs({ run }: { run: Run }) {
 
 function ArtifactRow({ label, path, exists }: { label: string; path: string; exists: boolean }) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded border border-border/50 bg-black/20 px-2 py-1.5">
+    <div className="flex items-center justify-between gap-2 rounded border border-border/50 bg-secondary/50 px-2 py-1.5">
       <span className="flex items-center gap-1.5 text-muted-foreground">
         <FileCode2 className="h-3 w-3" />
         {label}

@@ -24,10 +24,18 @@ export async function PATCH(
 ) {
   try {
     const { id } = await context.params;
-    const body = (await request.json()) as { title?: string; projectId?: string };
+    const body = (await request.json()) as { title?: string; projectId?: string; messageId?: string; content?: string };
     const thread = await updateDb((db) => {
       const found = db.threads.find((item) => item.id === id);
       if (!found) return undefined;
+      if (body.messageId && typeof body.content === "string") {
+        const message = found.messages.find((item) => item.id === body.messageId);
+        if (!message) throw new Error("Message not found.");
+        if (message.pending) throw new Error("A streaming message cannot be edited yet.");
+        if (body.content.length > 100_000) throw new Error("Edited message is too large.");
+        message.content = body.content;
+        message.error = false;
+      }
       if (body.title?.trim()) found.title = body.title.trim();
       if (body.projectId !== undefined) found.projectId = body.projectId;
       found.updatedAt = Date.now();

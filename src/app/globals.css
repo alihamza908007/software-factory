@@ -4,6 +4,37 @@
 
 @layer base {
   :root {
+    color-scheme: light;
+    --background: 150 14% 96%;
+    --foreground: 150 22% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 150 22% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 22% 12%;
+    --primary: 84 52% 36%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 150 12% 92%;
+    --secondary-foreground: 150 22% 12%;
+    --muted: 150 10% 93%;
+    --muted-foreground: 150 10% 40%;
+    --accent: 84 45% 90%;
+    --accent-foreground: 150 22% 12%;
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 150 12% 88%;
+    --input: 150 10% 86%;
+    --ring: 84 52% 36%;
+    --radius: 0.7rem;
+
+    /* Brand / neon accents — theme-aware for light/dark visibility */
+    --factory-lime: 84 60% 32%;
+    --factory-amber: 30 90% 40%;
+    --factory-cyan: 188 70% 32%;
+    --factory-red: 0 75% 45%;
+  }
+
+  .dark {
+    color-scheme: dark;
     --background: 140 8% 4%;
     --foreground: 80 10% 92%;
     --card: 140 8% 6%;
@@ -24,14 +55,16 @@
     --input: 140 7% 16%;
     --ring: 80 82% 68%;
     --radius: 0.7rem;
+
+    /* Brand / neon accents — theme-aware for light/dark visibility */
+    --factory-lime: 84 82% 68%;
+    --factory-amber: 38 90% 61%;
+    --factory-cyan: 174 73% 67%;
+    --factory-red: 0 100% 71%;
   }
 
   * {
     @apply border-border;
-  }
-
-  html {
-    color-scheme: dark;
   }
 
   body {
@@ -59,6 +92,8 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: #3b473d;
+    border-radius: 8px;
+    border: 2px solid transparent;
     background-clip: content-box;
   }
 }
@@ -69,7 +104,12 @@
   }
 
   .panel-inset {
-    @apply rounded-lg border border-border/60 bg-black/20;
+    @apply rounded-lg border border-border/60;
+    background-color: hsl(var(--foreground) / 0.05);
+  }
+
+  .panel-raised {
+    @apply rounded-xl border border-border/80 bg-card/90 shadow-lg shadow-black/10 backdrop-blur-md;
   }
 
   .eyebrow {
@@ -104,8 +144,58 @@
     background-size: 40px 40px;
   }
 
+  .status-dot {
+    @apply relative inline-flex h-2 w-2 shrink-0;
+  }
+  .status-dot::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: hsl(var(--primary));
+  }
+  .status-dot[data-busy="true"]::before {
+    animation: status-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+  .status-dot[data-idle="true"]::before {
+    background: hsl(var(--muted-foreground));
+    opacity: 0.6;
+  }
+
+  .live-dot {
+    @apply relative inline-flex h-2 w-2 shrink-0;
+  }
+  .live-dot::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: hsl(var(--factory-lime, 84 82% 68%));
+  }
+  .live-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    background: hsl(var(--factory-lime, 84 82% 68%));
+    animation: live-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      hsl(var(--muted)) 25%,
+      hsl(var(--muted-foreground) / 0.25) 50%,
+      hsl(var(--muted)) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.6s linear infinite;
+    border-radius: calc(var(--radius) - 4px);
+  }
+
   .markdown-body {
-    @apply text-sm leading-relaxed;
+    @apply min-w-0 max-w-full text-sm leading-relaxed;
+    overflow-wrap: anywhere;
   }
   .markdown-body p {
     @apply my-2;
@@ -136,12 +226,16 @@
   }
   .markdown-body code {
     @apply rounded bg-black/40 px-1 py-0.5 font-mono text-[0.82em] text-factory-lime;
+    background-color: hsl(var(--foreground) / 0.1);
   }
   .markdown-body pre {
-    @apply my-3 overflow-x-auto rounded-lg border border-border/70 bg-black/50 p-3;
+    @apply my-3 box-border w-full max-w-full overflow-x-auto rounded-lg border border-border/70 p-3;
+    background-color: hsl(var(--foreground) / 0.06);
+    white-space: pre;
   }
   .markdown-body pre code {
-    @apply bg-transparent p-0 text-[12px] leading-relaxed text-zinc-300;
+    @apply inline-block min-w-max max-w-none bg-transparent p-0 text-[12px] leading-relaxed text-foreground;
+    white-space: pre;
   }
   .markdown-body a {
     @apply text-factory-lime underline underline-offset-2;
@@ -150,7 +244,7 @@
     @apply my-2 border-l-2 border-factory-lime/50 pl-3 text-muted-foreground;
   }
   .markdown-body table {
-    @apply my-2 w-full border-collapse text-xs;
+    @apply my-2 block w-full max-w-full overflow-x-auto border-collapse text-xs;
   }
   .markdown-body th,
   .markdown-body td {
@@ -161,5 +255,92 @@
 @layer utilities {
   .mask-fade-y {
     mask-image: linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-line {
+  0%, 100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(400%);
+  }
+}
+
+@keyframes blink {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes glow {
+  0%, 100% {
+    box-shadow: 0 0 24px -6px rgba(200, 241, 105, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 40px -4px rgba(200, 241, 105, 0.55);
+  }
+}
+
+@keyframes status-ping {
+  0% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.45);
+  }
+  80% {
+    box-shadow: 0 0 0 8px hsl(var(--primary) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
+  }
+}
+
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  80%, 100% {
+    transform: scale(2.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

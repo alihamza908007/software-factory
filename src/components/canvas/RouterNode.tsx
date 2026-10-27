@@ -9,7 +9,7 @@ export function RouterNode({ data, selected }: NodeProps<RouterFlowNode>) {
   return (
     <div
       className={cn(
-        "w-[190px] rounded-xl border bg-[#12100c] shadow-xl",
+        "w-[190px] rounded-xl border bg-card shadow-xl",
         selected ? "border-factory-amber/60" : "border-border/80",
         data.status === "running" && "border-factory-amber/60",
         data.status === "failed" && "border-factory-red/60",

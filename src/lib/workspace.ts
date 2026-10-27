@@ -76,11 +76,25 @@ const IGNORED_DIRS = new Set([
   "build",
 ]);
 
+const WORKSPACE_CACHE_TTL_MS = 2_000;
+const workspaceCache = new Map<string, { files: string[]; at: number }>();
+
+export function invalidateWorkspaceCache(root: string): void {
+  for (const key of Array.from(workspaceCache.keys())) {
+    if (key.startsWith(`${root}|`)) workspaceCache.delete(key);
+  }
+}
+
 export async function listWorkspaceFiles(
   root: string,
   maxFiles = 300,
   subdir = "",
 ): Promise<string[]> {
+  const key = `${root}|${subdir}|${maxFiles}`;
+  const cached = workspaceCache.get(key);
+  if (cached && Date.now() - cached.at < WORKSPACE_CACHE_TTL_MS) {
+    return cached.files;
+  }
   const out: string[] = [];
   async function walk(dir: string) {
     if (out.length >= maxFiles) return;
@@ -104,7 +118,114 @@ export async function listWorkspaceFiles(
     }
   }
   await walk(path.join(root, subdir));
+  workspaceCache.set(key, { files: out, at: Date.now() });
   return out;
+}
+
+export interface WorkspaceHandshakeFinding {
+  code: "ROUTE_EXTENSION_CONFLICT" | "MISSING_PACKAGE_JSON" | "MISSING_PRISMA_SCHEMA" | "MISSING_ENV_EXAMPLE";
+  severity: "error" | "warning";
+  detail: string;
+  resolutionPath: string;
+  paths?: string[];
+}
+
+export interface WorkspaceHandshake {
+  workspaceRoot: string;
+  fileTree: string[];
+  findings: WorkspaceHandshakeFinding[];
+  blocked: boolean;
+}
+
+/** Inspect route and project configuration invariants before an agent handoff or build. */
+export async function inspectWorkspaceHandshake(
+  root: string,
+  stack: "node" | "python" | "next",
+): Promise<WorkspaceHandshake> {
+  const fileTree = await listWorkspaceFiles(root, 500);
+  const findings: WorkspaceHandshakeFinding[] = [];
+  const extensions = new Set([".js", ".jsx", ".ts", ".tsx"]);
+  const routes = new Map<string, string[]>();
+  for (const file of fileTree) {
+    const match = file.match(/^(?:(?:src\/)?app)\/(.*)\/(page|route)(\.[^/.]+)$/) ??
+      file.match(/^(?:(?:src\/)?app)\/(page|route)(\.[^/.]+)$/);
+    if (!match) continue;
+    const hasNestedPath = match.length === 4;
+    const routeDirectory = hasNestedPath ? match[1] : "";
+    const entry = hasNestedPath ? match[2] : match[1];
+    const extension = hasNestedPath ? match[3] : match[2];
+    if (!extensions.has(extension.slice(1))) continue;
+    const normalizedDirectory = routeDirectory.split("/").filter((part) => part && !/^\(.*\)$/.test(part)).join("/");
+    const key = `${normalizedDirectory}/${entry}`;
+    routes.set(key, [...(routes.get(key) ?? []), file]);
+  }
+  for (const [route, paths] of routes) {
+    if (paths.length < 2) continue;
+    findings.push({
+      code: "ROUTE_EXTENSION_CONFLICT",
+      severity: "error",
+      detail: `Multiple files claim the same Next.js ${route} route: ${paths.join(", ")}`,
+      resolutionPath: `Consolidate the route into one file and remove the duplicate route entry. Keep one page/route file for ${route}; then run npm run build.`,
+      paths,
+    });
+  }
+
+  const packageExists = await fs.access(path.join(root, "package.json")).then(() => true).catch(() => false);
+  if (stack !== "python" && !packageExists) {
+    findings.push({
+      code: "MISSING_PACKAGE_JSON",
+      severity: "error",
+      detail: "This JavaScript/Next.js workspace has no package.json.",
+      resolutionPath: "Create a package.json with the project's runtime scripts and declared dependencies, then run npm install and npm run build.",
+      paths: ["package.json"],
+    });
+  }
+  const packageJson: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> } = packageExists
+    ? await fs.readFile(path.join(root, "package.json"), "utf8").then((value) => JSON.parse(value) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> }).catch(() => ({}))
+    : {};
+  const hasPrisma = Boolean(packageJson.dependencies?.prisma || packageJson.devDependencies?.prisma || fileTree.some((file) => file.endsWith("prisma/schema.prisma")));
+  const prismaExists = await fs.access(path.join(root, "prisma", "schema.prisma")).then(() => true).catch(() => false);
+  if (hasPrisma && !prismaExists) {
+    findings.push({
+      code: "MISSING_PRISMA_SCHEMA",
+      severity: "error",
+      detail: "Prisma is configured or referenced, but prisma/schema.prisma is missing.",
+      resolutionPath: "Create prisma/schema.prisma matching the data models used by the application, or remove the unused Prisma dependency and references; then run npx prisma validate.",
+      paths: ["prisma/schema.prisma"],
+    });
+  }
+  const envExampleExists = await fs.access(path.join(root, ".env.example")).then(() => true).catch(() => false);
+  if (!envExampleExists) {
+    findings.push({
+      code: "MISSING_ENV_EXAMPLE",
+      severity: "warning",
+      detail: "No .env.example documents the workspace environment variables.",
+      resolutionPath: "If the project reads environment variables, add a secret-free .env.example listing the required variable names.",
+      paths: [".env.example"],
+    });
+  }
+  return { workspaceRoot: path.resolve(root), fileTree, findings, blocked: findings.some((finding) => finding.severity === "error") };
+}
+
+/** Preserve the lower-priority duplicate route source, so Next can build while no source is lost. */
+export async function preserveDuplicateRouteFiles(root: string, finding: WorkspaceHandshakeFinding): Promise<string[]> {
+  if (finding.code !== "ROUTE_EXTENSION_CONFLICT" || !finding.paths || finding.paths.length < 2) return [];
+  const rank: Record<string, number> = { ".tsx": 4, ".ts": 3, ".jsx": 2, ".js": 1 };
+  const ordered = [...finding.paths].sort((left, right) => {
+    const extRank = (file: string) => rank[path.extname(file)] ?? 0;
+    return extRank(right) - extRank(left) || left.localeCompare(right);
+  });
+  const preserved: string[] = [];
+  for (const relative of ordered.slice(1)) {
+    const source = path.resolve(root, relative);
+    if (!source.startsWith(`${path.resolve(root)}${path.sep}`)) continue;
+    const backupRelative = path.join(".factory", "preflight-backups", `${relative}.${Date.now()}.conflict`).replace(/\\/g, "/");
+    const backup = path.resolve(root, backupRelative);
+    await fs.mkdir(path.dirname(backup), { recursive: true });
+    await fs.rename(source, backup);
+    preserved.push(`${relative} → ${backupRelative}`);
+  }
+  return preserved;
 }
 
 export async function readWorkspaceContext(

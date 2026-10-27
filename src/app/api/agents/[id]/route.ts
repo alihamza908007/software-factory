@@ -1,6 +1,7 @@
 import { apiError, json } from "@/lib/api";
 import { deleteAgent, getAgent, listMetrics, saveAgent } from "@/lib/db";
 import type { Agent } from "@/lib/types";
+import { clearAgentMemory } from "@/lib/mesh/agent-memory";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +53,7 @@ export async function DELETE(
     const { id } = await context.params;
     const removed = await deleteAgent(id);
     if (!removed) return json({ error: "Agent not found." }, { status: 404 });
+    await clearAgentMemory(id);
     return json({ ok: true });
   } catch (error) {
     return apiError(error);

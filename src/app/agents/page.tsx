@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   Bot,
-  Cloud,
-  Cpu,
   DollarSign,
   Gauge,
   Loader2,
@@ -14,6 +12,7 @@ import {
   Plus,
   Save,
   Search,
+  PlugZap,
   SlidersHorizontal,
   Sparkles,
   Timer,
@@ -84,6 +83,8 @@ export default function AgentsPage() {
   const [perfAgent, setPerfAgent] = useState<Agent | null>(null);
   const [perfMetrics, setPerfMetrics] = useState<AgentMetric[]>([]);
   const [deleting, setDeleting] = useState<Agent | null>(null);
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [testingAgent, setTestingAgent] = useState<string | null>(null);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("agent");
@@ -120,9 +121,10 @@ export default function AgentsPage() {
       agents.filter((agent) =>
         `${agent.name} ${agent.role} ${agent.handle} ${agent.modelKey}`
           .toLowerCase()
-          .includes(query.toLowerCase()),
+          .includes(query.toLowerCase()) &&
+        (providerFilter === "all" || models.find((model) => model.key === agent.modelKey)?.provider === providerFilter),
       ),
-    [agents, query],
+    [agents, models, providerFilter, query],
   );
 
   const localAgents = agents.filter((agent) => agent.modelKey.startsWith("ollama/")).length;
@@ -207,6 +209,22 @@ export default function AgentsPage() {
     }
   }
 
+  async function testModel(agent: Agent) {
+    setTestingAgent(agent.id);
+    try {
+      const response = await fetch(`/api/agents/${agent.id}/test`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Model connection failed.");
+      toast.success("Model connection succeeded", {
+        description: `${data.modelKey} · ${formatDuration(data.latencyMs)} · ${data.tokensPerSec.toFixed(1)} tok/s${data.fellBack ? " · fallback used" : ""}`,
+      });
+    } catch (error) {
+      toast.error("Model connection failed", { description: String(error) });
+    } finally {
+      setTestingAgent(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -246,10 +264,17 @@ export default function AgentsPage() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-          <span className="flex items-center gap-1"><Cpu className="h-3 w-3 text-factory-amber" /> Ollama</span>
-          <span className="flex items-center gap-1"><Cloud className="h-3 w-3 text-factory-cyan" /> OpenCode</span>
-          <span className="flex items-center gap-1"><SlidersHorizontal className="h-3 w-3" /> live routing</span>
+        <div className="flex items-center gap-2">
+          <Select value={providerFilter} onValueChange={setProviderFilter}>
+            <SelectTrigger className="h-8 w-[170px] text-xs"><SelectValue placeholder="All providers" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All providers</SelectItem>
+              {[...new Set(models.map((model) => model.provider))].sort().map((provider) => (
+                <SelectItem key={provider} value={provider}>{provider}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="hidden items-center gap-1 font-mono text-[10px] text-muted-foreground xl:flex"><SlidersHorizontal className="h-3 w-3" /> live routing</span>
         </div>
       </div>
 
@@ -303,7 +328,7 @@ export default function AgentsPage() {
                     value={agent.modelKey}
                     onChange={(value) => void handleModelSwitch(agent, value)}
                     models={models}
-                    className="h-8 bg-black/20"
+                    className="h-8 bg-secondary/50"
                   />
                   <div className="flex items-center justify-between gap-2">
                     <ModelBadge model={model} modelKey={agent.modelKey} compact />
@@ -317,7 +342,7 @@ export default function AgentsPage() {
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-border/60 bg-black/20 p-2.5">
+                <div className="mt-3 grid grid-cols-3 gap-2 rounded-lg border border-border/60 bg-secondary/50 p-2.5">
                   <div>
                     <div className="eyebrow">TTFT</div>
                     <div className="font-mono text-xs">{latest ? formatDuration(latest.ttftMs) : "—"}</div>
@@ -336,6 +361,10 @@ export default function AgentsPage() {
                 </div>
 
                 <div className="mt-3 flex items-center gap-1.5 border-t border-border/50 pt-3">
+                  <Button variant="outline" size="sm" className="h-8" onClick={() => void testModel(agent)} disabled={testingAgent === agent.id}>
+                    {testingAgent === agent.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
+                    Test model
+                  </Button>
                   <Button variant="secondary" size="sm" className="flex-1" onClick={() => setPerfAgent(agent)}>
                     <Gauge className="h-3.5 w-3.5" />
                     Performance
@@ -515,7 +544,7 @@ export default function AgentsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg border border-border/70 bg-black/20 px-3 py-2.5">
+              <div className="flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5">
                 <div>
                   <div className="text-xs font-medium">Light-model concurrency</div>
                   <div className="text-[10px] text-muted-foreground">
@@ -718,7 +747,7 @@ function PerformanceDialog({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-black/20 px-3 py-2 text-[10px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-secondary/50 px-3 py-2 text-[10px] text-muted-foreground">
               <span className="flex items-center gap-1"><Timer className="h-3 w-3" /> Streaming latency</span>
               <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-factory-lime" /> Local tok/s</span>
               <span className="flex items-center gap-1"><DollarSign className="h-3 w-3 text-factory-amber" /> Cost estimate</span>

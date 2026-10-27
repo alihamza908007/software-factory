@@ -17,7 +17,10 @@ export async function GET() {
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
         messageCount: thread.messages.length,
+        directMessageCount: thread.messages.filter((message) => !message.handoffFrom).length,
+        handoffCount: thread.messages.filter((message) => Boolean(message.handoffFrom)).length,
         lastMessage: thread.messages.at(-1) ?? null,
+        lastDirectMessage: thread.messages.filter((message) => !message.handoffFrom).at(-1) ?? null,
       })),
     });
   } catch (error) {

@@ -1,10 +1,13 @@
-import { appendMetric, getSettings } from "../db";
+import { appendMetric, getAgent, getSettings, listAgents } from "../db";
 import { resourceQueue } from "../queue/resource-manager";
 import type { Agent, AgentMetric, ModelInfo, ResourceReservation } from "../types";
 import { uid } from "../utils";
 import { getModel } from "./catalog";
 import type { ProviderMessage, ProviderResult } from "./ollama";
 import { executeLLMCall } from "../llm/universal-provider";
+import { injectAgentMemory } from "../mesh/agent-memory";
+import { recordTokenUsage } from "../mesh/analytics";
+import { agentRosterPrompt } from "../mesh/router";
 
 export interface GenerateOptions {
   agent: Agent;
@@ -14,6 +17,7 @@ export interface GenerateOptions {
   projectDir?: string;
   signal?: AbortSignal;
   priority?: number;
+  maxTokens?: number;
   onToken?: (delta: string, fullText: string) => void;
   onThinking?: (delta: string) => void;
   onStatus?: (status: {
@@ -24,6 +28,13 @@ export interface GenerateOptions {
   allowFallbackOnError?: boolean;
   persistMetric?: boolean;
 }
+
+const BEHAVIORAL_GUARDRAILS = [
+  "STRICT BEHAVIORAL GUARDRAILS (apply to every response):",
+  "ZERO HALLUCINATION OF HANDLES — never invent or alter an @handle. Only address peers present in the live injected roster. If no roster agent fits, describe the missing capability without inventing a recipient.",
+  "NO SCOPE CREEP — execute only the objective in the TaskContract. If you find an out-of-scope issue, emit a separate `SCOPE_ADVISORY: <one-sentence finding>` line and continue the assigned task; do not expand the current task to fix it.",
+  "ACTIONABLE COMMUNICATION — every message must ask a clarifying question with options, report a verified metric/runtime fact, or deliver a pointer-based artifact handoff. No conversational filler.",
+].join("\n");
 
 function isLocalProvider(provider: ModelInfo["provider"]): boolean {
   return provider === "ollama" || provider === "lmstudio";
@@ -59,12 +70,26 @@ async function callProvider(
   model: ModelInfo,
   options: GenerateOptions,
 ): Promise<ProviderResult> {
+  // Epigenetic memory is injected at the narrowest shared point so every
+  // caller (chat, SDLC, canvas, negociator, validator) receives the same
+  // self-learned constraints without duplicating prompt plumbing.
+  const [rememberedMessages, activeAgents] = await Promise.all([
+    injectAgentMemory(options.agent.id, options.messages),
+    listAgents(),
+  ]);
+  const messages = [
+    {
+      role: "system" as const,
+      content: `${agentRosterPrompt(activeAgents)}\n\n${BEHAVIORAL_GUARDRAILS}`,
+    },
+    ...rememberedMessages,
+  ];
   const result = await executeLLMCall({
     provider: model.provider,
     modelId: model.modelId,
-    messages: options.messages,
+    messages,
     temperature: options.agent.temperature,
-    maxTokens: options.agent.maxTokens,
+    maxTokens: Math.min(options.agent.maxTokens, options.maxTokens ?? options.agent.maxTokens),
     signal: options.signal,
     onToken: options.onToken,
     onThinking: options.onThinking,
@@ -91,15 +116,25 @@ async function callProvider(
 
 export async function generateWithAgent(options: GenerateOptions): Promise<GenerateOutcome> {
   const settings = await getSettings();
-  const primary = await getModel(options.agent.modelKey);
+  // Resolve the current persisted configuration for every generation. Long
+  // running DAGs therefore observe model hot-swaps on their next node.
+  const activeOptions = {
+    ...options,
+    agent: (await getAgent(options.agent.id)) ?? options.agent,
+  };
+  activeOptions.agent = {
+    ...activeOptions.agent,
+    maxTokens: Math.min(activeOptions.agent.maxTokens, options.maxTokens ?? activeOptions.agent.maxTokens),
+  };
+  const primary = await getModel(activeOptions.agent.modelKey);
   if (!primary) {
     throw new Error(
-      `Model "${options.agent.modelKey}" is not available. Choose another model for ${options.agent.name}.`,
+      `Model "${activeOptions.agent.modelKey}" is not available. Choose another model for ${activeOptions.agent.name}.`,
     );
   }
 
   const fallback = await resolveFallback(
-    options.agent,
+    activeOptions.agent,
     primary,
     settings.allowCloudFallback,
   );
@@ -110,19 +145,19 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
     reservation = await resourceQueue.acquire({
       model: primary,
       fallbackModel: fallback,
-      agentId: options.agent.id,
-      agentName: options.agent.name,
+      agentId: activeOptions.agent.id,
+      agentName: activeOptions.agent.name,
       label: options.purpose,
       priority: options.priority,
-      allowConcurrency: options.agent.allowConcurrency,
+      allowConcurrency: activeOptions.agent.allowConcurrency,
     });
   } catch (error) {
     // The VRAM manager could not place the job. If the agent has a cloud fallback, use it.
     if (fallback && !isLocalProvider(fallback.provider)) {
       reservation = await resourceQueue.acquire({
         model: fallback,
-        agentId: options.agent.id,
-        agentName: options.agent.name,
+        agentId: activeOptions.agent.id,
+        agentName: activeOptions.agent.name,
         label: options.purpose,
         priority: options.priority,
         allowConcurrency: true,
@@ -139,7 +174,7 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
   let fallbackReason = reservation.fallbackReason;
 
   if (fellBack) {
-    options.onStatus?.({
+    activeOptions.onStatus?.({
       stage: "fallback",
       message:
         fallbackReason ??
@@ -147,7 +182,7 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
       modelKey: effective.key,
     });
   } else {
-    options.onStatus?.({
+    activeOptions.onStatus?.({
       stage: "running",
       message:
         effective.kind === "local"
@@ -162,28 +197,28 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
 
   try {
     try {
-      result = await callProvider(effective, options);
+      result = await callProvider(effective, activeOptions);
     } catch (error) {
       lastError = error;
       const isAbort =
         error instanceof DOMException && error.name === "AbortError";
       if (isAbort) throw error;
       if (
-        options.allowFallbackOnError !== false &&
+        activeOptions.allowFallbackOnError !== false &&
         fallback &&
         fallback.key !== effective.key &&
         (isLocalProvider(fallback.provider) || settings.allowCloudFallback)
       ) {
         resourceQueue.release(reservation);
-        options.onStatus?.({
+        activeOptions.onStatus?.({
           stage: "retry",
           message: `${effective.name} failed (${String(error).slice(0, 140)}). Retrying on ${fallback.name}.`,
           modelKey: fallback.key,
         });
         reservation = await resourceQueue.acquire({
           model: fallback,
-          agentId: options.agent.id,
-          agentName: options.agent.name,
+          agentId: activeOptions.agent.id,
+          agentName: activeOptions.agent.name,
           label: `${options.purpose} · recovery`,
           priority: options.priority,
           allowConcurrency: true,
@@ -191,7 +226,7 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
         effective = (await getModel(reservation.modelKey)) ?? fallback;
         fellBack = true;
         fallbackReason = `Primary model failed: ${String(error).slice(0, 200)}`;
-        result = await callProvider(effective, options);
+        result = await callProvider(effective, activeOptions);
       } else {
         throw error;
       }
@@ -209,8 +244,8 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
 
   const metric: AgentMetric = {
     id: uid("met"),
-    agentId: options.agent.id,
-    agentName: options.agent.name,
+    agentId: activeOptions.agent.id,
+    agentName: activeOptions.agent.name,
     modelKey: effective.key,
     provider: effective.provider,
     ttftMs: Math.round(result.ttftMs),
@@ -223,13 +258,17 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
     queuedMs: Math.max(0, Math.round(queuedMs)),
     fellBack,
     fallbackReason,
-    runId: options.runId,
+    runId: activeOptions.runId,
     createdAt: Date.now(),
   };
 
-  if (options.persistMetric !== false) {
+  if (activeOptions.persistMetric !== false) {
     await appendMetric(metric);
   }
+  await recordTokenUsage(
+    activeOptions.agent.id,
+    result.inputTokens + result.outputTokens,
+  ).catch(() => undefined);
 
   return {
     result,

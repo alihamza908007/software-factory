@@ -8,6 +8,17 @@ import type {
   ModelProvider,
 } from "../types";
 import { classifyHandoff, hashPayload } from "./guardrails";
+import { applyFileBlocks, parseFileBlocks } from "./parse";
+import { meshBus, publishScopeAdvisories, setMeshAgentStatus } from "../mesh/event-bus";
+import { tokenBudgetForTask } from "../mesh/context-manager";
+import {
+  acceptTask,
+  createTaskContract,
+  inferRequiredCapabilities,
+  routeTask,
+} from "../mesh/accountability";
+import { verifyPostFlight } from "../mesh/validators";
+import { listWorkspaceFiles } from "../workspace";
 
 export type DagNodeStatus = "pending" | "queued" | "running" | "passed" | "failed" | "blocked";
 
@@ -33,6 +44,10 @@ export interface DagEvent {
   status?: DagNodeStatus;
   detail?: string;
   output?: unknown;
+  error?: string;
+  durationMs?: number;
+  tokens?: number;
+  outputPreview?: string;
   at: number;
 }
 
@@ -42,6 +57,9 @@ export interface DagNodeResult {
   status: DagNodeStatus;
   output?: unknown;
   error?: string;
+  durationMs?: number;
+  tokens?: number;
+  outputPreview?: string;
   startedAt?: number;
   completedAt?: number;
 }
@@ -151,6 +169,9 @@ export async function executeDag(
         (output as Record<string, unknown>).skipped === true;
       state.output = output;
       state.completedAt = Date.now();
+      state.durationMs = state.completedAt - state.startedAt;
+      state.tokens = outputTokens(output);
+      state.outputPreview = firstText(output).slice(0, 500);
       if (skipped) {
         state.status = "blocked";
         emit({
@@ -163,6 +184,9 @@ export async function executeDag(
               ? "Skipped by router branch."
               : "Node skipped.",
           output,
+          durationMs: state.durationMs,
+          tokens: state.tokens,
+          outputPreview: state.outputPreview,
           at: Date.now(),
         });
         return;
@@ -175,12 +199,17 @@ export async function executeDag(
         label: node.label,
         status: "passed",
         output,
+        durationMs: state.durationMs,
+        tokens: state.tokens,
+        outputPreview: state.outputPreview,
         at: Date.now(),
       });
     } catch (error) {
       state.status = "failed";
       state.error = error instanceof Error ? error.message : String(error);
       state.completedAt = Date.now();
+      state.durationMs = state.completedAt - (state.startedAt ?? state.completedAt);
+      state.outputPreview = state.error.slice(0, 500);
       errors.push({ nodeId: node.id, error: state.error });
       emit({
         type: "failed",
@@ -188,6 +217,9 @@ export async function executeDag(
         label: node.label,
         status: "failed",
         detail: state.error,
+        error: state.error,
+        durationMs: state.durationMs,
+        outputPreview: state.outputPreview,
         at: Date.now(),
       });
     }
@@ -246,6 +278,17 @@ function firstText(value: unknown): string {
     return JSON.stringify(value);
   }
   return String(value ?? "");
+}
+
+function outputTokens(value: unknown): number | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const metrics = (value as Record<string, unknown>).metrics as
+    | { inputTokens?: unknown; outputTokens?: unknown }
+    | undefined;
+  const input = Number(metrics?.inputTokens ?? 0);
+  const output = Number(metrics?.outputTokens ?? 0);
+  if (!Number.isFinite(input + output) || input + output <= 0) return undefined;
+  return input + output;
 }
 
 function upstreamText(upstream: Map<string, unknown>): string {
@@ -310,6 +353,10 @@ export interface CanvasRunEvent {
   status?: DagNodeStatus;
   detail?: string;
   score?: number;
+  error?: string;
+  durationMs?: number;
+  tokens?: number;
+  outputPreview?: string;
   result?: DagExecutionResult;
   at: number;
 }
@@ -320,6 +367,11 @@ export async function executeCanvasTopology(
     signal?: AbortSignal;
     emit?: (event: CanvasRunEvent) => void;
     maxNodes?: number;
+    initialInput?: string;
+    projectDir?: string;
+    projectId?: string;
+    runId?: string;
+    applyArtifacts?: boolean;
   } = {},
 ): Promise<DagExecutionResult> {
   const nodes = topology.nodes ?? [];
@@ -395,7 +447,7 @@ export async function executeCanvasTopology(
         }
 
         // Agent node.
-        const agent =
+        let agent =
           enabled.find((item) => item.id === canvasNode.data.agentId) ??
           enabled.find((item) => item.handle === canvasNode.data.label.toLowerCase()) ??
           enabled[0];
@@ -404,25 +456,84 @@ export async function executeCanvasTopology(
         const nodePrompt =
           canvasNode.data.prompt?.trim() ||
           "Advance the workflow using the upstream payload. Return a concrete, reviewable result.";
+        const canvasFileTree = options.projectDir
+          ? await listWorkspaceFiles(options.projectDir, 160).catch(() => [])
+          : [];
+        let contract = createTaskContract({
+          sourceAgent: previous[0] ?? "Canvas orchestrator",
+          targetAgent: agent.name,
+          objective: `${canvasNode.data.label}: ${nodePrompt}`,
+          requiredArtifacts: [],
+          requiredCapabilities: inferRequiredCapabilities(`${canvasNode.data.label}\n${nodePrompt}`),
+          maxTokenBudget: tokenBudgetForTask(`${nodePrompt}\n${payload}`),
+        });
+        contract = acceptTask(contract, agent, {
+          workspaceRoot: options.projectDir,
+          fileTree: canvasFileTree,
+          projectId: options.projectId,
+          runId: options.runId,
+        });
+        if (contract.status !== "ACCEPTED") {
+          const reroute = contract.status === "REJECTED"
+            ? routeTask(enabled.filter((item) => item.id !== agent?.id), `${canvasNode.data.label}\n${nodePrompt}`)
+            : undefined;
+          if (!reroute?.agent) {
+            throw new Error(`${agent.name} could not accept canvas node "${canvasNode.data.label}": ${contract.reason ?? "pre-flight blocked"}${contract.preflight?.resolutionPath ? `\nresolutionPath: ${contract.preflight.resolutionPath}` : ""}`);
+          }
+          agent = reroute.agent;
+          contract = acceptTask({ ...contract, targetAgent: agent.name, status: "PENDING_ACCEPTANCE", reason: undefined }, agent, {
+            workspaceRoot: options.projectDir,
+            fileTree: canvasFileTree,
+            projectId: options.projectId,
+            runId: options.runId,
+          });
+          if (contract.status !== "ACCEPTED") {
+            throw new Error(`${agent.name} could not accept rerouted canvas node "${canvasNode.data.label}": ${contract.reason ?? "pre-flight blocked"}`);
+          }
+          emit({
+            type: "log",
+            nodeId: canvasNode.id,
+            label: canvasNode.data.label,
+            detail: `Capability reroute → ${agent.name}.`,
+            at: Date.now(),
+          });
+        }
+        meshBus.publish({
+          type: "TASK_CONTRACT",
+          source: "Canvas orchestrator",
+          target: `@${agent.handle.replace(/^@/, "")}`,
+          agentId: agent.id,
+          targetAgentId: agent.id,
+          projectId: options.projectId,
+          runId: options.runId,
+          severity: "info",
+          title: `Canvas task accepted · ${agent.name}`,
+          message: contract.reason ?? contract.objective.slice(0, 500),
+          payload: { contract },
+        });
         const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
           { role: "system", content: agent.systemPrompt },
           {
             role: "user",
             content: [
               nodePrompt,
-              payload ? `Upstream payload:\n${payload}` : "",
+              payload ? `Upstream payload:\n${payload}` : options.initialInput ? `Build brief:\n${options.initialInput}` : "",
               "Return a complete result. If you emit files, use fenced blocks with `path=` annotations.",
             ]
               .filter(Boolean)
               .join("\n\n"),
           },
         ];
+        setMeshAgentStatus(agent.id, "executing", `Canvas · ${canvasNode.data.label}`);
         const outcome = await generateWithAgent({
           agent,
           messages,
           purpose: `canvas · ${canvasNode.data.label}`,
           signal,
           priority: 7,
+          maxTokens: tokenBudgetForTask(`${nodePrompt}\n${payload}`),
+          projectDir: options.projectDir,
+          runId: options.runId,
           onStatus: (status) =>
             emit({
               type: "log",
@@ -432,6 +543,62 @@ export async function executeCanvasTopology(
               at: Date.now(),
             }),
         });
+        setMeshAgentStatus(agent.id, "idle", "Canvas node complete");
+        publishScopeAdvisories(agent.name, outcome.result.text, {
+          agentId: agent.id,
+          projectId: options.projectId,
+          runId: options.runId,
+        });
+        const generatedFiles = parseFileBlocks(outcome.result.text);
+        let appliedFiles: string[] = [];
+        let applyErrors: Array<{ path: string; error: string }> = [];
+        if (generatedFiles.length && options.applyArtifacts && options.projectDir) {
+          const applied = await applyFileBlocks(options.projectDir, generatedFiles);
+          appliedFiles = applied.written;
+          applyErrors = applied.errors;
+        }
+        if (generatedFiles.length) {
+          meshBus.publish({
+            type: "ARTIFACT_CREATED",
+            source: agent.name,
+            agentId: agent.id,
+            projectId: options.projectId,
+            runId: options.runId,
+            severity: applyErrors.length ? "warning" : "info",
+            title: `${agent.name} published canvas artifacts`,
+            message: generatedFiles.map((file) => file.path).slice(0, 12).join(", "),
+            payload: {
+              files: generatedFiles.map((file) => ({
+                path: file.path,
+                content: file.content,
+              })),
+              applied: appliedFiles,
+              applyErrors,
+            },
+          });
+        }
+        contract = {
+          ...contract,
+          requiredArtifacts: options.applyArtifacts ? generatedFiles.map((file) => file.path) : [],
+        };
+        const postFlight = await verifyPostFlight({
+          contract,
+          agent,
+          workspaceRoot: options.projectDir,
+          fileTree: options.projectDir
+            ? await listWorkspaceFiles(options.projectDir, 160).catch(() => [])
+            : canvasFileTree,
+          artifacts: generatedFiles.map((file) => ({ path: file.path, content: file.content })),
+          projectId: options.projectId,
+          runId: options.runId,
+        });
+        if (!postFlight.passed) {
+          setMeshAgentStatus(agent.id, "error", "Post-flight blocked");
+          throw new Error(
+            `Post-flight blocked for "${canvasNode.data.label}": ${postFlight.findings.find((item) => item.severity === "error")?.detail ?? "artifact verification failed"}${postFlight.resolutionPath ? `\nresolutionPath: ${postFlight.resolutionPath}` : ""}`,
+          );
+        }
+
         const result: GuardrailResult = classifyHandoff({
           sourceAgent: {
             id: previous[0] ?? "canvas",
@@ -457,6 +624,11 @@ export async function executeCanvasTopology(
           score: result.score,
           payloadHash: hashPayload(outcome.result.text),
           metrics: outcome.metric,
+          files: appliedFiles,
+          applyErrors,
+          contract: { ...contract, status: "COMPLETED" as const },
+          postFlight,
+          handoffSummary: postFlight.summary,
         };
       },
     };
@@ -480,6 +652,10 @@ export async function executeCanvasTopology(
           status: event.status,
           detail: event.detail ?? event.label,
           score: output?.score,
+          error: event.error,
+          durationMs: event.durationMs,
+          tokens: event.tokens,
+          outputPreview: event.outputPreview,
           at: event.at,
         });
       } else {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -12,15 +12,20 @@ import {
   GitBranch,
   LayoutDashboard,
   Menu,
+  Moon,
   MessagesSquare,
   Plus,
+  RotateCcw,
   Settings,
   Sparkles,
+  Sun,
+  Waypoints,
   X,
   Zap,
 } from "lucide-react";
 import { cn, formatMB } from "@/lib/utils";
 import { useFactory } from "@/lib/store";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +34,7 @@ import { GlobalRunLauncher, launchRunDialog } from "@/components/shared/run-laun
 const NAV = [
   { href: "/", label: "Command Center", icon: LayoutDashboard, key: "overview" },
   { href: "/agents", label: "Agent Manager", icon: Bot, key: "agents" },
+  { href: "/mesh", label: "Agent Mesh HUD", icon: Waypoints, key: "mesh" },
   { href: "/chat", label: "Chat Matrix", icon: MessagesSquare, key: "chat" },
   { href: "/pipeline", label: "SDLC Pipeline", icon: CircuitBoard, key: "pipeline" },
   { href: "/projects", label: "Projects", icon: Boxes, key: "projects" },
@@ -38,6 +44,8 @@ const NAV = [
 const TITLES: Record<string, { title: string; eyebrow: string }> = {
   "/": { title: "Command Center", eyebrow: "Factory floor / live operations" },
   "/agents": { title: "Agent Manager", eyebrow: "Workforce / model routing" },
+  "/mesh": { title: "Agent Mesh HUD", eyebrow: "Autonomy / peer-to-peer mesh" },
+  "/factory": { title: "Factory Command Center", eyebrow: "Autonomy / live mesh operations" },
   "/chat": { title: "Chat Matrix", eyebrow: "Coordination / multi-agent channel" },
   "/pipeline": { title: "SDLC Pipeline", eyebrow: "Execution / five-phase automation" },
   "/projects": { title: "Projects", eyebrow: "Workspaces / artifacts" },
@@ -66,6 +74,25 @@ function FactoryGlyph({ className }: { className?: string }) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [resumingRunId, setResumingRunId] = useState<string | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("factory-theme");
+      if (stored === "light" || stored === "dark") setTheme(stored);
+      else if (window.matchMedia("(prefers-color-scheme: light)").matches) setTheme("light");
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.style.colorScheme = theme;
+    try {
+      localStorage.setItem("factory-theme", theme);
+    } catch {}
+  }, [theme]);
   const {
     refreshAll,
     fetchHealth,
@@ -77,10 +104,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     modelsLoaded,
     fetchModels,
     runs,
+    connectMesh,
+    meshEvents,
+    meshConnected,
   } = useFactory();
+  const knownResponseEvents = useRef<Set<string> | null>(null);
 
   useEffect(() => {
     void refreshAll();
+    connectMesh();
     const interval = setInterval(() => {
       void fetchHealth();
       void fetchResources();
@@ -91,7 +123,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!meshConnected) return;
+    // Seed from the initial snapshot so historical replies do not appear as new
+    // notifications after a page load or EventSource reconnect.
+    if (!knownResponseEvents.current) {
+      knownResponseEvents.current = new Set(meshEvents.map((event) => event.id));
+      return;
+    }
+    for (const event of meshEvents) {
+      if (knownResponseEvents.current.has(event.id)) continue;
+      knownResponseEvents.current.add(event.id);
+      if (event.type !== "TASK_CONTRACT" || event.title !== "Agent response delivered") continue;
+      const excerpt = event.message.replace(/\s+/g, " ").trim();
+      toast.message(`${event.source} responded`, {
+        description: excerpt.length > 220 ? `${excerpt.slice(0, 217)}…` : excerpt,
+        duration: 8_000,
+      });
+    }
+    if (knownResponseEvents.current.size > 600) {
+      knownResponseEvents.current = new Set(meshEvents.slice(-300).map((event) => event.id));
+    }
+  }, [meshConnected, meshEvents]);
+
+  useEffect(() => {
     if (!modelsLoaded) void fetchModels();
+    // Model discovery is intentionally continuous: Ollama/LM Studio loads
+    // appear in every selector without a page refresh.
+    const discovery = setInterval(() => {
+      if (document.visibilityState === "visible") void fetchModels(true);
+    }, 30_000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void fetchModels(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(discovery);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelsLoaded]);
 
@@ -107,6 +175,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     () => runs.filter((run) => run.status === "running" || run.status === "queued"),
     [runs],
   );
+  const recoverableRuns = useMemo(
+    () => runs.filter((run) => run.status === "recoverable_paused" || run.status === "interrupted"),
+    [runs],
+  );
+
+  async function resumeRun(runId: string) {
+    setResumingRunId(runId);
+    try {
+      const response = await fetch(`/api/runs/${runId}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "resume" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Could not resume this run.");
+      await fetchRuns();
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setResumingRunId(null);
+    }
+  }
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -134,7 +224,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] transition-colors",
                   active
                     ? "bg-factory-lime/10 text-factory-lime"
-                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground",
+                    : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
                 )}
               >
                 <Icon className={cn("h-4 w-4", active ? "text-factory-lime" : "text-muted-foreground/80")} />
@@ -161,7 +251,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               key={agent.id}
               href={`/agents?agent=${agent.id}`}
-              className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-white/5 hover:text-foreground"
+              className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
             >
               <span
                 className="flex h-5 w-5 items-center justify-center rounded-full font-mono text-[9px] font-bold text-black"
@@ -219,16 +309,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="pointer-events-none fixed inset-0 bg-radial-fade" />
       <div className="pointer-events-none fixed inset-0 factory-grid opacity-40 [mask-image:radial-gradient(ellipse_at_center,black,transparent_85%)]" />
 
-      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[248px] border-r border-border/60 bg-[#0a0d0b]/95 backdrop-blur-xl lg:block">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-[248px] border-r border-border/60 bg-card/95 backdrop-blur-xl lg:block">
         {sidebar}
       </aside>
 
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/70" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[280px] border-r border-border bg-[#0a0d0b]">
+          <aside className="absolute inset-y-0 left-0 w-[280px] border-r border-border bg-card">
             <button
-              className="absolute right-3 top-4 z-10 rounded-md p-1 text-muted-foreground hover:bg-white/5"
+              className="absolute right-3 top-4 z-10 rounded-md p-1 text-muted-foreground hover:bg-secondary/50"
               onClick={() => setMobileOpen(false)}
               aria-label="Close navigation"
             >
@@ -279,12 +369,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             </div>
 
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              title={theme === "dark" ? "Light theme" : "Dark theme"}
+            >
+              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+
             <Button size="sm" onClick={() => launchRunDialog()}>
               <Plus className="h-3.5 w-3.5" />
               New run
             </Button>
           </div>
         </header>
+
+        {recoverableRuns.length > 0 && (
+          <div className="mx-4 mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-factory-amber/30 bg-factory-amber/[0.07] px-3 py-2.5 md:mx-6 lg:mx-8">
+            <RotateCcw className="h-4 w-4 shrink-0 text-factory-amber" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium">{recoverableRuns.length} run{recoverableRuns.length === 1 ? " was" : "s were"} paused after a server restart</div>
+              <div className="text-[10px] text-muted-foreground">Resume from the last saved SDLC phase.</div>
+            </div>
+            {recoverableRuns.slice(0, 3).map((run) => (
+              <Button key={run.id} size="sm" variant="outline" onClick={() => void resumeRun(run.id)} disabled={resumingRunId === run.id}>
+                {resumingRunId === run.id ? <Activity className="h-3.5 w-3.5 animate-pulse" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                Resume {run.projectName}
+              </Button>
+            ))}
+            {recoverableRuns.length > 3 && <Link href="/pipeline" className="text-[10px] text-factory-amber hover:underline">View all</Link>}
+          </div>
+        )}
 
         <main className="mx-auto w-full max-w-[1500px] px-4 py-6 md:px-6 lg:px-8">{children}</main>
 

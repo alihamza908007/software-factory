@@ -9,7 +9,7 @@ function statusIcon(status?: string) {
   if (status === "running") return <Loader2 className="h-3 w-3 animate-spin text-factory-amber" />;
   if (status === "passed") return <CheckCircle2 className="h-3 w-3 text-factory-lime" />;
   if (status === "failed" || status === "blocked") return <XCircle className="h-3 w-3 text-factory-red" />;
-  return <span className="h-2 w-2 rounded-full bg-white/25" />;
+  return <span className="h-2 w-2 rounded-full bg-muted-foreground" />;
 }
 
 export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
@@ -17,7 +17,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
   return (
     <div
       className={cn(
-        "w-[230px] rounded-xl border bg-[#0e1210] shadow-xl transition-colors",
+        "w-[230px] rounded-xl border bg-card shadow-xl transition-colors",
         selected ? "border-factory-lime/60" : "border-border/80",
         data.status === "running" && "border-factory-amber/60",
         data.status === "failed" && "border-factory-red/60",
@@ -42,7 +42,7 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
           <span className="truncate">{data.modelKey ?? "model inherited from agent"}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="rounded border border-border/70 bg-black/30 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+          <span className="rounded border border-border/70 bg-secondary/50 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
             {data.provider ?? "auto"}
           </span>
           {typeof data.guardrailScore === "number" && (
@@ -55,8 +55,19 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
           </span>
         </div>
         {data.detail && (
-          <div className="line-clamp-2 rounded bg-black/30 px-2 py-1 text-[9px] leading-relaxed text-muted-foreground">
+          <div className="line-clamp-2 rounded bg-secondary/50 px-2 py-1 text-[9px] leading-relaxed text-muted-foreground">
             {data.detail}
+          </div>
+        )}
+        {(data.durationMs || data.tokens) && (
+          <div className="flex items-center gap-2 font-mono text-[8px] text-muted-foreground">
+            {data.durationMs ? <span>{Math.round(data.durationMs)} ms</span> : null}
+            {data.tokens ? <span>{data.tokens} tok</span> : null}
+          </div>
+        )}
+        {data.error && (
+          <div className="line-clamp-2 rounded border border-red-400/20 bg-red-400/5 px-2 py-1 text-[8px] leading-relaxed text-red-300">
+            {data.error}
           </div>
         )}
       </div>

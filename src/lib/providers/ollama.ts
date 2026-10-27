@@ -1,5 +1,6 @@
 import type { ModelInfo } from "../types";
 import { getSettings } from "../db";
+import { getHardwareProfile } from "../system/hardware-profiler";
 
 export interface ProviderMessage {
   role: "system" | "user" | "assistant";
@@ -35,6 +36,7 @@ export interface ProviderResult {
 export async function generateOllama(request: ProviderRequest): Promise<ProviderResult> {
   const settings = await getSettings();
   const { model } = request;
+  const profile = getHardwareProfile();
   const baseUrl = settings.ollamaUrl.replace(/\/$/, "");
   const started = performance.now();
   let firstTokenAt: number | undefined;
@@ -59,7 +61,8 @@ export async function generateOllama(request: ProviderRequest): Promise<Provider
       options: {
         temperature: request.temperature ?? 0.2,
         num_predict: request.maxTokens ?? 4096,
-        num_ctx: Math.min(model.contextLength ?? 16_384, 24_576),
+        num_ctx: Math.min(model.contextLength ?? profile.contextWindow, profile.contextWindow),
+        num_thread: profile.threadCount,
       },
     }),
   });

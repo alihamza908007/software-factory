@@ -29,7 +29,9 @@ import type {
 } from "../types";
 import { slugify, truncate, uid } from "../utils";
 import {
+  inspectWorkspaceHandshake,
   listWorkspaceFiles,
+  preserveDuplicateRouteFiles,
   readWorkspaceContext,
   scaffoldProject,
   treeSummary,
@@ -43,6 +45,7 @@ import {
 } from "./parse";
 import {
   architecturePrompt,
+  dependencyHandshakeRepairPrompt,
   deployPrompt,
   healPrompt,
   implementationPrompt,
@@ -66,6 +69,14 @@ import {
   runTests,
 } from "../tools/toolchain";
 import { buildWorkflow, verifyWorkflow } from "../tools/workflow";
+import { learnFromFailure } from "../mesh/agent-memory";
+import { inferResolutionPath, meshBus, publishAgentEnvelope, setMeshAgentStatus } from "../mesh/event-bus";
+import { ensureValidatorRuntime, verifyPostFlight, verifyProjectRuntime } from "../mesh/validators";
+import { decomposeProjectTask, type DecomposedTask } from "./decomposer";
+import { negotiateTaskOwnership } from "../mesh/negotiation";
+import { acceptTask, completeTaskContract, createTaskContract, inferRequiredCapabilities } from "../mesh/accountability";
+import { executeCanvasTopology, executeDag } from "./scheduler";
+import { runRepairCycle } from "./repair-engine";
 
 type ActiveRun = { controller: AbortController; cancelled: boolean };
 const globalStore = globalThis as typeof globalThis & {
@@ -163,8 +174,22 @@ async function guardHandoff(
   );
   runEvents.publish(runId, { type: "guardrail", runId, result });
   if (result.deadLoop.detected) {
+    await learnFromFailure({
+      agent: source,
+      source: "dead-loop",
+      detail: result.deadLoop.message,
+      verdict: result,
+    });
     runEvents.publish(runId, { type: "dead_loop", runId, deadLoop: result.deadLoop });
     throw new DeadLoopException(result.deadLoop);
+  }
+  if (!result.passed) {
+    await learnFromFailure({
+      agent: source,
+      source: "guardrail",
+      detail: result.errors.join(" ") || "Handoff did not meet the quality threshold.",
+      verdict: result,
+    });
   }
   return result;
 }
@@ -224,6 +249,31 @@ async function finishPhase(
 async function addArtifact(runId: string, artifact: string) {
   await updateRun(runId, (run) => {
     if (!run.artifacts.fileTree.includes(artifact)) run.artifacts.fileTree.push(artifact);
+  });
+}
+
+function publishArtifactEvent(
+  source: string,
+  runId: string,
+  projectId: string,
+  files: Array<{ path: string; content: string }>,
+  title: string,
+) {
+  if (!files.length) return;
+  meshBus.publish({
+    type: "ARTIFACT_CREATED",
+    source,
+    runId,
+    projectId,
+    severity: "info",
+    title,
+    message: files.map((file) => file.path).slice(0, 12).join(", "),
+    payload: {
+      files: files.slice(0, 18).map((file) => ({
+        path: file.path,
+        content: file.content,
+      })),
+    },
   });
 }
 
@@ -311,6 +361,7 @@ async function runVerification(
   stack: Project["stack"],
   phaseId: PhaseId,
   includeInstall = true,
+  allowConcurrency = false,
 ) {
   const settings = await getSettings();
   if (!settings.allowExecution) {
@@ -334,8 +385,17 @@ async function runVerification(
       );
     }
   }
-  await logPhase(runId, phaseId, "command", "Running syntax / lint checks…");
-  const lint = await runLint(root, stack);
+  await logPhase(
+    runId,
+    phaseId,
+    "command",
+    allowConcurrency
+      ? "Running syntax / lint checks and tests concurrently…"
+      : "Running syntax / lint checks…",
+  );
+  const [lint, tests] = allowConcurrency
+    ? await Promise.all([runLint(root, stack), runTests(root, stack)])
+    : [await runLint(root, stack), [] as Awaited<ReturnType<typeof runTests>>];
   for (const result of lint.slice(-12)) {
     await logPhase(
       runId,
@@ -345,8 +405,10 @@ async function runVerification(
       (result.stdout + result.stderr).slice(-1600) || undefined,
     );
   }
-  await logPhase(runId, phaseId, "command", "Running test suite…");
-  const tests = await runTests(root, stack);
+  if (!allowConcurrency) {
+    await logPhase(runId, phaseId, "command", "Running test suite…");
+    tests.push(...(await runTests(root, stack)));
+  }
   for (const result of tests) {
     await logPhase(
       runId,
@@ -357,7 +419,35 @@ async function runVerification(
     );
   }
   const results = [...lint, ...tests];
-  return { results, failed: resultsFailed(results) };
+  const failed = resultsFailed(results);
+  if (failed) {
+    const fileTree = await listWorkspaceFiles(root, 160);
+    const output = failureDigest(results, 12_000);
+    const resolutionPath = inferResolutionPath(output);
+    meshBus.publish({
+      type: "TEST_FAILED",
+      source: "Local toolchain",
+      runId,
+      severity: "error",
+      title: "Verification failure observed",
+      message: "The local lint/test toolchain returned a non-zero result. Silent Witness is inspecting the failure.",
+      payload: { output, resolutionPath, fileTree, workspaceRoot: root },
+      requiresOverride: false,
+    });
+    const developer = (await listAgents()).find((agent) => agent.enabled && /developer|implementation/i.test(`${agent.handle} ${agent.role}`));
+    publishAgentEnvelope({
+      from: "@local-toolchain",
+      to: developer ? `@${developer.handle.replace(/^@/, "")}` : "@developer",
+      type: "VALIDATION_REPORT",
+      payload: output.slice(-4_000),
+      timestamp: new Date().toISOString(),
+      resolutionPath,
+      fileTree,
+      workspaceRoot: root,
+      status: "FAILED",
+    }, { agentId: developer?.id, targetAgentId: developer?.id, runId });
+  }
+  return { results, failed };
 }
 
 async function generateFiles(
@@ -368,21 +458,46 @@ async function generateFiles(
   root: string,
   messages: Parameters<typeof generateWithAgent>[0]["messages"],
   purpose: string,
-  options?: { testFiles?: boolean; guardrailTarget?: Agent; guardrailStage?: string },
+  options?: { testFiles?: boolean; guardrailTarget?: Agent; guardrailStage?: string; signal?: AbortSignal },
 ): Promise<{ files: ParsedFile[]; raw: string; outcome: Awaited<ReturnType<typeof generateWithAgent>> }> {
   const settings = await getSettings();
   await logPhase(runId, phaseId, "agent", `${agent.name} (${agent.role}) is generating…`);
-  let outcome = await generateWithAgent({
-    agent,
-    messages,
-    purpose,
+  setMeshAgentStatus(agent.id, "thinking", `${phaseId} · preparing generation`);
+  meshBus.publish({
+    type: "AGENT_STATUS",
+    source: agent.name,
+    agentId: agent.id,
     runId,
-    projectDir: root,
-    priority: phaseId === "implementation" ? 9 : phaseId === "testing" ? 8 : 6,
-    onStatus: (status) => {
-      void logPhase(runId, phaseId, status.stage === "fallback" ? "warn" : "info", status.message);
-    },
+    severity: "info",
+    title: `${agent.name} is thinking`,
+    message: `${phaseId} phase · ${purpose}`,
+    payload: { status: "thinking", detail: purpose },
   });
+  let outcome: Awaited<ReturnType<typeof generateWithAgent>>;
+  try {
+    setMeshAgentStatus(agent.id, "executing", `${phaseId} · ${purpose}`);
+    outcome = await generateWithAgent({
+      agent,
+      messages,
+      purpose,
+      runId,
+      projectDir: root,
+      priority: phaseId === "implementation" ? 9 : phaseId === "testing" ? 8 : 6,
+      signal: options?.signal,
+      onStatus: (status) => {
+        void logPhase(runId, phaseId, status.stage === "fallback" ? "warn" : "info", status.message);
+      },
+    });
+  } catch (error) {
+    setMeshAgentStatus(agent.id, "error", String(error).slice(0, 200));
+    await learnFromFailure({
+      agent,
+      source: "error",
+      detail: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+  setMeshAgentStatus(agent.id, "idle", `${phaseId} generation complete`);
   await logPhase(
     runId,
     phaseId,
@@ -444,6 +559,97 @@ async function generateFiles(
   return { files, raw: outcome.result.text, outcome };
 }
 
+async function performDependencyHandshake(
+  runId: string,
+  project: Project,
+  root: string,
+  agent: Agent,
+  signal?: AbortSignal,
+) {
+  let handshake = await inspectWorkspaceHandshake(root, project.stack);
+  const preserved: string[] = [];
+  for (const finding of handshake.findings) {
+    const moved = await preserveDuplicateRouteFiles(root, finding).catch(() => []);
+    preserved.push(...moved);
+  }
+  if (preserved.length) {
+    handshake = await inspectWorkspaceHandshake(root, project.stack);
+    const resolutionPath = `Duplicate route source(s) preserved under .factory/preflight-backups; the higher-priority TypeScript route remains active. Verify the selected route and run npm run build.`;
+    await logPhase(runId, "implementation", "warn", "Dependency handshake preserved duplicate route files before build.", preserved.join("\n"));
+    publishAgentEnvelope({
+      from: "@workspace-preflight",
+      to: `@${agent.handle.replace(/^@/, "")}`,
+      type: "VALIDATION_REPORT",
+      payload: `The route conflict was removed from Next.js routing while the duplicate source was preserved for recovery. ${preserved.join("; ")}`,
+      timestamp: new Date().toISOString(),
+      resolutionPath,
+      fileTree: handshake.fileTree,
+      workspaceRoot: handshake.workspaceRoot,
+      status: "INFO",
+    }, { agentId: agent.id, runId, projectId: project.id });
+  }
+
+  for (const finding of handshake.findings.filter((item) => item.severity === "warning")) {
+    await logPhase(runId, "implementation", "warn", `Dependency handshake · ${finding.code}`, `${finding.detail}\nresolutionPath: ${finding.resolutionPath}`);
+  }
+  let attempt = 0;
+  while (handshake.blocked && attempt < 3) {
+    assertActive(runId);
+    attempt += 1;
+    const blocker = handshake.findings.find((finding) => finding.severity === "error");
+    if (!blocker) break;
+    await logPhase(runId, "implementation", "error", `Dependency handshake blocked · ${blocker.code} · repair ${attempt}/3`, `${blocker.detail}\nresolutionPath: ${blocker.resolutionPath}`);
+    meshBus.publish({
+      type: "VALIDATION_FAILED",
+      source: "Workspace dependency handshake",
+      agentId: agent.id,
+      projectId: project.id,
+      runId,
+      severity: "error",
+      title: `Pre-flight blocked · ${blocker.code}`,
+      message: blocker.detail,
+      payload: { resolutionPath: blocker.resolutionPath, fileTree: handshake.fileTree, workspaceRoot: handshake.workspaceRoot, finding: blocker },
+      requiresOverride: false,
+    });
+    publishAgentEnvelope({
+      from: "@workspace-preflight",
+      to: `@${agent.handle.replace(/^@/, "")}`,
+      type: "VALIDATION_REPORT",
+      payload: blocker.detail,
+      timestamp: new Date().toISOString(),
+      resolutionPath: blocker.resolutionPath,
+      fileTree: handshake.fileTree,
+      workspaceRoot: handshake.workspaceRoot,
+      status: "BLOCKED",
+    }, { agentId: agent.id, targetAgentId: agent.id, runId, projectId: project.id });
+
+    const repair = await generateFiles(
+      runId,
+      "implementation",
+      agent,
+      project,
+      root,
+      dependencyHandshakeRepairPrompt(agent, project, handshake),
+      `dependency handshake repair ${attempt}`,
+      { signal },
+    );
+    const applied = repair.files.length ? await applyFileBlocks(root, repair.files) : { written: [], errors: [] };
+    if (!applied.written.length) break;
+    handshake = await inspectWorkspaceHandshake(root, project.stack);
+    for (const finding of handshake.findings) {
+      const moved = await preserveDuplicateRouteFiles(root, finding).catch(() => []);
+      preserved.push(...moved);
+    }
+    if (preserved.length) handshake = await inspectWorkspaceHandshake(root, project.stack);
+  }
+  if (handshake.blocked) {
+    const blocker = handshake.findings.find((finding) => finding.severity === "error");
+    const resolutionPath = blocker?.resolutionPath ?? "Resolve the workspace dependency handshake findings, then rerun the build.";
+    throw new Error(`Workspace pre-flight remains blocked after ${attempt} repair attempt(s). ${blocker?.detail ?? "Unknown structural conflict."}\nresolutionPath: ${resolutionPath}\nworkspaceRoot: ${handshake.workspaceRoot}\nfileTree:\n${handshake.fileTree.map((file) => `${handshake.workspaceRoot}/${file}`).join("\n")}`);
+  }
+  return handshake;
+}
+
 async function processImplementation(
   runId: string,
   project: Project,
@@ -451,12 +657,134 @@ async function processImplementation(
   agents: Record<PhaseId, Agent | undefined>,
   spec: string,
   architecture: string,
+  allowConcurrency = false,
+  signal?: AbortSignal,
+  taskPlan: DecomposedTask[] = [],
 ) {
   const developer = agents.implementation;
   if (!developer) throw new Error("No developer agent is configured.");
-  const tree = await treeSummary(root);
-  const prompt = implementationPrompt(developer, project, project.description, spec, architecture, tree);
-  let generated = await generateFiles(
+  let handshake = await performDependencyHandshake(runId, project, root, developer, signal);
+  let tree = await treeSummary(root);
+  let prompt = implementationPrompt(developer, project, project.description, spec, architecture, tree, handshake);
+  const qa = agents.testing;
+  const implementationCapabilities = inferRequiredCapabilities(`${spec}\n${architecture}`)
+    .filter((capability) => capability === "frontend/ui/react" || capability === "backend/api/data");
+  let implementationContract = acceptTask(createTaskContract({
+    sourceAgent: agents.architecture?.name ?? "Architecture",
+    targetAgent: developer.name,
+    objective: `Implement ${project.name} to satisfy the approved specification and architecture.`,
+    requiredArtifacts: [],
+    requiredCapabilities: implementationCapabilities,
+    maxTokenBudget: Math.min(8_192, developer.maxTokens),
+  }), developer, {
+    workspaceRoot: root,
+    fileTree: handshake.fileTree,
+    projectId: project.id,
+    runId,
+  });
+  if (implementationContract.status !== "ACCEPTED") {
+    throw new Error(`${developer.name} failed the implementation pre-flight: ${implementationContract.reason ?? "readiness check failed"}${implementationContract.preflight?.resolutionPath ? `\nresolutionPath: ${implementationContract.preflight.resolutionPath}` : ""}`);
+  }
+  await logPhase(runId, "implementation", "success", `Implementation pre-flight passed for ${developer.name}.`, implementationContract.preflight?.reason);
+  let redTestOutput = "";
+  if (qa) {
+    await logPhase(runId, "implementation", "info", "TDD preflight: asking QA to write verification files before implementation.");
+    const preflight = await generateFiles(
+      runId,
+      "implementation",
+      qa,
+      project,
+      root,
+      testPrompt(qa, project, project.description, spec, architecture, tree, await readWorkspaceContext(root, 12_000)),
+      "TDD verification authoring",
+      { testFiles: true, guardrailTarget: developer, guardrailStage: "TDD preflight", signal },
+    );
+    if (preflight.files.length) {
+      const appliedTests = await applyFileBlocks(root, preflight.files);
+      if (appliedTests.written.length) {
+        await logPhase(runId, "implementation", "success", `QA staged ${appliedTests.written.length} verification file(s) before implementation.`, summarizeFiles(preflight.files));
+        if (project.stack !== "python") await applyNodeManifest(root);
+        if ((await getSettings()).allowExecution) {
+          const red = await runTests(root, project.stack);
+          redTestOutput = formatCommandResults(red).slice(-7_000);
+          await logPhase(runId, "implementation", "command", "TDD red phase · pre-implementation test execution", redTestOutput || "No test output.");
+        }
+      }
+    } else {
+      await logPhase(runId, "implementation", "warn", "QA did not return executable test files in the TDD preflight.", truncate(preflight.raw, 1_200));
+    }
+    tree = await treeSummary(root);
+    handshake = await performDependencyHandshake(runId, project, root, developer, signal);
+    tree = await treeSummary(root);
+    prompt = implementationPrompt(developer, project, project.description, spec, architecture, tree, handshake);
+    if (redTestOutput) prompt = [...prompt, { role: "user", content: `PRE-IMPLEMENTATION TEST OUTPUT (expected failures before code; make these pass):\n${redTestOutput}` }];
+  }
+  const splitCandidate = allowConcurrency &&
+    /front.?end|user interface|\bui\b|client-side/i.test(`${spec}\n${architecture}`) &&
+    /back.?end|\bapi\b|database|schema/i.test(`${spec}\n${architecture}`);
+  let generated: Awaited<ReturnType<typeof generateFiles>> | undefined;
+  if (splitCandidate) {
+    const workforce = (await listAgents()).filter((agent) => agent.enabled);
+    const plannedAgent = (track: string) => {
+      const handle = taskPlan.find((task) => task.track === "implementation" && task.id.includes(track))?.targetAgent;
+      return workforce.find((agent) => `@${agent.handle.replace(/^@/, "")}` === handle);
+    };
+    const frontend = plannedAgent("ui") ?? workforce.find((agent) => /front.?end|ui|web/i.test(`${agent.name} ${agent.role}`)) ?? developer;
+    const backend = plannedAgent("api") ?? workforce.find((agent) => agent.id !== frontend.id && /back.?end|api|data|database/i.test(`${agent.name} ${agent.role}`)) ?? developer;
+    const track = (agent: Agent, label: string, scope: string) => ({
+      id: label,
+      label,
+      kind: "agent" as const,
+      dependsOn: [],
+      run: () => generateFiles(
+        runId,
+        "implementation",
+        agent,
+        project,
+        root,
+        [
+          ...prompt,
+          { role: "user" as const, content: `Implement only the ${label} track. ${scope} Coordinate through the architecture contract; do not create or modify files outside your owned paths. Return complete files using path= annotations.` },
+        ],
+        `implementation · ${label} track`,
+        { guardrailTarget: agents.testing, guardrailStage: `implementation ${label}`, signal },
+      ),
+    });
+    await logPhase(runId, "implementation", "info", "Specification contains separable UI and API work; scheduling two implementation tracks.");
+    const graph = await executeDag([
+      track(frontend, "frontend", "Own UI components, client pages and styles."),
+      track(backend, "backend", "Own API routes, server logic, persistence and schemas."),
+    ], {
+      signal,
+      emit: (event) => {
+        if (event.type === "start" || event.type === "complete" || event.type === "failed") {
+          void logPhase(runId, "implementation", event.type === "failed" ? "warn" : "info", `Parallel ${event.label} track ${event.type}.`);
+        }
+      },
+    });
+    const tracks = Object.values(graph.outputs).filter((value): value is Awaited<ReturnType<typeof generateFiles>> => Boolean(value));
+    const merged = new Map<string, ParsedFile>();
+    let conflict = false;
+    for (const result of tracks) {
+      for (const file of result.files) {
+        const existing = merged.get(file.path);
+        if (existing && existing.content !== file.content) conflict = true;
+        else merged.set(file.path, file);
+      }
+    }
+    if (graph.ok && !conflict && tracks.length === 2 && merged.size) {
+      generated = {
+        files: Array.from(merged.values()),
+        raw: tracks.map((result) => result.raw).join("\n\n"),
+        outcome: tracks[0].outcome,
+      };
+    } else {
+      await logPhase(runId, "implementation", "warn", conflict
+        ? "Parallel tracks claimed the same path with different content; retrying as one coordinated implementation."
+        : "Parallel tracks did not return usable files; retrying as one coordinated implementation.");
+    }
+  }
+  generated ??= await generateFiles(
     runId,
     "implementation",
     developer,
@@ -467,6 +795,7 @@ async function processImplementation(
     {
       guardrailTarget: agents.testing,
       guardrailStage: "implementation",
+      signal,
     },
   );
 
@@ -495,6 +824,7 @@ async function processImplementation(
       {
         guardrailTarget: agents.testing,
         guardrailStage: "implementation",
+        signal,
       },
     );
   }
@@ -519,6 +849,152 @@ async function processImplementation(
   if (!applied.written.length) {
     throw new Error("No implementation files could be written to the workspace.");
   }
+  if (project.stack === "node" || project.stack === "next") await applyNodeManifest(root);
+
+  const contract = {
+    ...implementationContract,
+    requiredArtifacts: applied.written,
+    maxTokenBudget: Math.min(8_192, developer.maxTokens),
+  };
+  const acceptedContract = { ...contract, status: "ACCEPTED" as const, reason: "Implementation artifacts were written; post-flight and runtime proof are now required." };
+  const onRuntimeOutput = ({ stream, text, command }: { stream: "stdout" | "stderr"; text: string; command: string }) => {
+      const detail = text.slice(-1_200);
+      meshBus.publish({
+        type: "TERMINAL_OUTPUT",
+        source: "Runtime QA",
+        agentId: developer.id,
+        projectId: project.id,
+        runId,
+        severity: stream === "stderr" ? "warning" : "info",
+        title: command,
+        message: detail,
+        payload: { stream, command },
+      });
+      runEvents.publish(runId, {
+        type: "log",
+        runId,
+        phaseId: "implementation",
+        log: { id: uid("log"), at: Date.now(), level: stream === "stderr" ? "warn" : "command", message: `$ ${command} · ${stream}`, detail },
+      });
+  };
+  let runtime = await verifyProjectRuntime({ projectId: project.id, agent: developer, runId, onOutput: onRuntimeOutput });
+  const repairCycle = await runRepairCycle({
+    project,
+    agent: developer,
+    runId,
+    initial: runtime,
+    maxAttempts: Math.min((await getSettings()).maxHealAttempts, 3),
+    verify: () =>
+      verifyProjectRuntime({ projectId: project.id, agent: developer, runId, onOutput: onRuntimeOutput }),
+    onAttempt: async (event) => {
+      if (event.phase === "start") {
+        await logPhase(
+          runId,
+          "implementation",
+          "warn",
+          `Runtime proof failed; repair contract ${event.attempt}/${event.maxAttempts} routed to @${developer.handle.replace(/^@/, "")}.`,
+          event.failure.detail.slice(-8_000),
+        );
+        return;
+      }
+      await logPhase(
+        runId,
+        "implementation",
+        event.record?.passed ? "success" : "warn",
+        event.record?.passed
+          ? `Runtime repair ${event.attempt}/${event.maxAttempts} passed.`
+          : `Runtime repair ${event.attempt}/${event.maxAttempts} did not produce a green runtime proof.`,
+        event.record?.detail,
+      );
+    },
+    repair: async (contract, attempt, failure) => {
+      assertActive(runId);
+      const repairTree = await listWorkspaceFiles(root, 160);
+      const repairResolution = inferResolutionPath(failure.detail);
+      const repairEvidence = [
+        contract.objective,
+        failure.detail,
+        `\nresolutionPath: ${repairResolution}`,
+        `workspaceRoot: ${root}`,
+        `authoritative fileTree:\n${repairTree.map((file) => `${root}/${file}`).join("\n")}`,
+      ].join("\n\n");
+      const repair = await generateFiles(
+        runId,
+        "implementation",
+        developer,
+        project,
+        root,
+        healPrompt(developer, project, spec, repairEvidence, await readWorkspaceContext(root, 24_000), attempt),
+        `runtime proof repair ${attempt}`,
+        { guardrailTarget: qa, guardrailStage: "runtime proof repair", signal },
+      );
+      const repairFiles = repair.files.length ? await applyFileBlocks(root, repair.files) : { written: [], errors: [] };
+      if (!repairFiles.written.length) {
+        return { appliedFiles: [], detail: "The repair attempt produced no applicable files." };
+      }
+      await logPhase(runId, "implementation", "info", `Applied ${repairFiles.written.length} runtime repair file(s).`, summarizeFiles(repair.files));
+      if (project.stack !== "python") await applyNodeManifest(root);
+      return { appliedFiles: repairFiles.written, detail: repair.raw.slice(-2_000) };
+    },
+  });
+  runtime = repairCycle.runtime;
+  for (const result of runtime.results) {
+    await logPhase(runId, "implementation", result.exitCode === 0 ? "success" : "error", `$ ${result.command} · exit ${result.exitCode}`, (result.stdout + result.stderr).slice(-6_000));
+  }
+  const validationTree = await listWorkspaceFiles(root, 160);
+  const postFlight = await verifyPostFlight({
+    contract: { ...acceptedContract, requiredArtifacts: applied.written },
+    agent: developer,
+    workspaceRoot: root,
+    fileTree: validationTree,
+    artifacts: generated.files.map((file) => ({ path: file.path, content: file.content })),
+    projectId: project.id,
+    runId,
+  });
+  const completedBase = completeTaskContract(acceptedContract, runtime.proof, postFlight);
+  const completedContract = repairCycle.exhausted && !runtime.passed
+    ? {
+        ...completedBase,
+        status: "BLOCKED" as const,
+        reason: `Self-healing repair exhausted after ${repairCycle.attempts.length} attempt(s). Runtime proof is still red. ${runtime.detail.slice(-600)}`,
+      }
+    : completedBase;
+  publishAgentEnvelope({
+    from: qa?.handle ? `@${qa.handle.replace(/^@/, "")}` : "@runtime-qa",
+    to: `@${developer.handle.replace(/^@/, "")}`,
+    type: "VALIDATION_REPORT",
+    payload: runtime.passed
+      ? postFlight.passed
+        ? postFlight.summary.summary
+        : `Post-flight blocked: ${postFlight.resolutionPath ?? "artifact verification failed"}`
+      : runtime.detail.slice(-4_000),
+    timestamp: new Date().toISOString(),
+    resolutionPath: runtime.passed
+      ? postFlight.passed
+        ? "No repair required; runtime proof and post-flight checks passed."
+        : postFlight.resolutionPath ?? inferResolutionPath("Post-flight artifact verification failed.")
+      : inferResolutionPath(runtime.detail),
+    fileTree: validationTree,
+    workspaceRoot: root,
+    status: runtime.passed && postFlight.passed ? "COMPLETED" : "FAILED",
+    summary: postFlight.summary,
+  }, { agentId: qa?.id, targetAgentId: developer.id, projectId: project.id, runId });
+  meshBus.publish({
+    type: "TASK_CONTRACT",
+    source: completedContract.sourceAgent,
+    target: completedContract.targetAgent,
+    agentId: developer.id,
+    targetAgentId: developer.id,
+    projectId: project.id,
+    runId,
+    severity: completedContract.status === "COMPLETED" ? "success" : "error",
+    title: completedContract.status === "COMPLETED" ? "Implementation runtime proof passed" : "Implementation rejected: runtime proof missing or failed",
+    message: completedContract.reason ?? runtime.detail,
+    payload: { contract: completedContract },
+  });
+  if (completedContract.status !== "COMPLETED") {
+    throw new Error(completedContract.reason ?? `Runtime verification failed.\n${runtime.detail}`);
+  }
   await logPhase(
     runId,
     "implementation",
@@ -527,15 +1003,18 @@ async function processImplementation(
     summarizeFiles(generated.files),
   );
 
-  if (project.stack === "node" || project.stack === "next") {
-    await applyNodeManifest(root);
-  }
-
   const files = await listWorkspaceFiles(root, 300);
   await updateRun(runId, (run) => {
     run.artifacts.fileTree = files;
   });
   const artifacts = generated.files.map((file) => file.path);
+  publishArtifactEvent(
+    developer.name,
+    runId,
+    project.id,
+    generated.files.map((file) => ({ path: file.path, content: file.content })),
+    `${developer.name} published ${generated.files.length} implementation file(s)`,
+  );
   await setPhase(runId, "implementation", { artifacts, progress: 100 });
   await commitPhase(
     runId,
@@ -554,6 +1033,7 @@ async function processTesting(
   spec: string,
   architecture: string,
   settings: Awaited<ReturnType<typeof getSettings>>,
+  allowConcurrency = false,
 ) {
   const qa = agents.testing;
   if (!qa) throw new Error("No QA agent is configured.");
@@ -587,6 +1067,13 @@ async function processTesting(
     );
     if (project.stack === "node" || project.stack === "next") await applyNodeManifest(root);
     const artifacts = testGen.files.map((file) => file.path);
+    publishArtifactEvent(
+      qa.name,
+      runId,
+      project.id,
+      testGen.files.map((file) => ({ path: file.path, content: file.content })),
+      `${qa.name} published ${testGen.files.length} test file(s)`,
+    );
     await setPhase(runId, "testing", { artifacts });
     await commitPhase(
       runId,
@@ -605,14 +1092,15 @@ async function processTesting(
   }
 
   await setPhase(runId, "testing", { progress: 35 });
-  let verification = await runVerification(runId, root, project.stack, "testing");
+  let verification = await runVerification(runId, root, project.stack, "testing", true, allowConcurrency);
   await updateRun(runId, (run) => {
     const phase = run.phases.find((item) => item.id === "testing");
     if (phase) phase.commands = verification.results;
   });
 
   let attempt = 0;
-  while (verification.failed && attempt < settings.maxHealAttempts) {
+  const healLimit = Math.min(settings.maxHealAttempts, 3);
+  while (verification.failed && attempt < healLimit) {
     assertActive(runId);
     attempt += 1;
     await setPhase(runId, "testing", {
@@ -622,7 +1110,7 @@ async function processTesting(
       runId,
       "testing",
       "warn",
-      `Self-heal attempt ${attempt}/${settings.maxHealAttempts} — dispatching failure logs to ${agents.implementation?.name ?? "developer"}.`,
+      `Self-heal attempt ${attempt}/${healLimit} — dispatching failure logs to ${agents.implementation?.name ?? "developer"}.`,
     );
     const developer = agents.implementation ?? qa;
     const failure = failureDigest(verification.results, 11_000);
@@ -660,7 +1148,7 @@ async function processTesting(
       );
     }
 
-    verification = await runVerification(runId, root, project.stack, "testing", true);
+    verification = await runVerification(runId, root, project.stack, "testing", true, allowConcurrency);
     await updateRun(runId, (run) => {
       const phase = run.phases.find((item) => item.id === "testing");
       if (phase) phase.commands = verification.results;
@@ -719,6 +1207,13 @@ async function processDeployment(
     run.artifacts.workflowPath = workflow.path;
   });
   await addArtifact(runId, workflow.path);
+  publishArtifactEvent(
+    agents.deployment?.name ?? "DevOps",
+    runId,
+    project.id,
+    [{ path: workflow.path, content: workflow.content }],
+    `Deployment workflow published to ${workflow.path}`,
+  );
   await logPhase(
     runId,
     "deployment",
@@ -786,8 +1281,35 @@ async function processDeployment(
 
   const buildFailed = resultsFailed(build);
   if (buildFailed) {
+    const output = failureDigest(build, 12_000);
+    const fileTree = await listWorkspaceFiles(root, 160);
+    const resolutionPath = inferResolutionPath(output);
+    meshBus.publish({
+      type: "TEST_FAILED",
+      source: "Deployment build gate",
+      agentId: agents.implementation?.id,
+      projectId: project.id,
+      runId,
+      severity: "error",
+      title: "Deployment build blocked",
+      message: output.slice(-1_200),
+      payload: { output, resolutionPath, fileTree, workspaceRoot: root },
+    });
+    if (agents.implementation) {
+      publishAgentEnvelope({
+        from: "@deployment-build-gate",
+        to: `@${agents.implementation.handle.replace(/^@/, "")}`,
+        type: "VALIDATION_REPORT",
+        payload: output.slice(-4_000),
+        timestamp: new Date().toISOString(),
+        resolutionPath,
+        fileTree,
+        workspaceRoot: root,
+        status: "FAILED",
+      }, { agentId: agents.deployment?.id, targetAgentId: agents.implementation.id, runId, projectId: project.id });
+    }
     await finishPhase(runId, "deployment", "failed", "Build verification failed.");
-    throw new Error("Deployment build verification failed.");
+    throw new Error(`Deployment build verification failed.\nresolutionPath: ${resolutionPath}\n${output.slice(-4_000)}`);
   }
 
   if (settings.githubToken && settings.githubOwner && settings.githubRepo) {
@@ -871,7 +1393,8 @@ async function processDeployment(
   await finishPhase(runId, "deployment", "passed");
 }
 
-async function executeRun(runId: string) {
+async function executeRun(runId: string, resumeFrom?: PhaseId) {
+  ensureValidatorRuntime();
   const run = await getRun(runId);
   if (!run) return;
   const project = await getProject(run.projectId);
@@ -885,10 +1408,43 @@ async function executeRun(runId: string) {
   const settings = await getSettings();
   const agents = resolveAgents(await listAgents());
   const root = project.workspacePath;
+  const resumePhase = resumeFrom ?? "requirements";
+  const phaseStartIndex = ["requirements", "architecture", "implementation", "testing", "deployment"].indexOf(resumePhase);
   const controller = activeRuns.get(runId)?.controller ?? new AbortController();
   if (!activeRuns.has(runId)) activeRuns.set(runId, { controller, cancelled: false });
 
   try {
+    const activeAgents = Array.from(new Map(
+      Object.values(agents)
+        .filter((agent): agent is Agent => Boolean(agent))
+        .map((agent) => [agent.id, agent] as const),
+    ).values());
+    const negotiation = await negotiateTaskOwnership({
+      objective: run.prompt,
+      agents: activeAgents,
+      projectId: run.projectId,
+      runId,
+      managerId: agents.requirements?.id,
+    });
+    if (negotiation.negotiated) {
+      await logPhase(
+        runId,
+        "requirements",
+        "info",
+        `One-turn ownership negotiation persisted (${negotiation.id}).`,
+        `${negotiation.agreement}\n\n${negotiation.transcript.map((message) => `${message.fromAgent}: ${message.content}`).join("\n")}`,
+      );
+    }
+    const taskPlan = decomposeProjectTask(run.prompt, activeAgents);
+    const plannedAgent = (id: string) => {
+      const handle = taskPlan.find((task) => task.id === id)?.targetAgent;
+      return Object.values(agents).find((agent) => agent && `@${agent.handle.replace(/^@/, "")}` === handle);
+    };
+    agents.requirements = plannedAgent("task-requirements") ?? agents.requirements;
+    agents.architecture = plannedAgent("task-architecture") ?? agents.architecture;
+    agents.implementation = plannedAgent("task-implementation") ?? agents.implementation;
+    agents.testing = plannedAgent("task-validation") ?? agents.testing;
+    await logPhase(runId, "requirements", "info", `Deterministic task decomposition created ${taskPlan.length} tasks.`, JSON.stringify(taskPlan, null, 2));
     await fs.mkdir(root, { recursive: true });
     const existing = await listWorkspaceFiles(root, 5);
     if (!existing.length) {
@@ -914,7 +1470,7 @@ async function executeRun(runId: string) {
       };
       item.status = "running";
       item.startedAt = Date.now();
-      item.currentPhase = "requirements";
+      item.currentPhase = resumePhase;
     });
     await publishSnapshot(runId);
     await logPhase(
@@ -924,6 +1480,206 @@ async function executeRun(runId: string) {
       `Feature branch ${branches.branch} created from ${branches.baseBranch}.`,
     );
 
+    if (run.options.pipelineTopology && phaseStartIndex <= 2) {
+      await finishPhase(runId, "requirements", "skipped", "Replaced by the active custom DAG.");
+      await finishPhase(runId, "architecture", "skipped", "Replaced by the active custom DAG.");
+      const developer = agents.implementation;
+      if (!developer) throw new Error("No developer agent is configured.");
+      await beginPhase(runId, "implementation", developer.id);
+      await performDependencyHandshake(runId, project, root, developer, controller.signal);
+      await logPhase(runId, "implementation", "info", "Executing the exported canvas topology as this run's SDLC graph.");
+      const executeGraph = () => executeCanvasTopology(run.options.pipelineTopology!, {
+        signal: controller.signal,
+        initialInput: run.prompt,
+        projectDir: root,
+        projectId: project.id,
+        runId,
+        emit: (event) => {
+          if (event.type === "node") {
+            void logPhase(
+              runId,
+              "implementation",
+              event.status === "failed" || event.status === "blocked" ? "warn" : "info",
+              `Graph node ${event.nodeId}: ${event.status ?? event.type}${event.detail ? ` · ${event.detail}` : ""}`,
+            );
+          }
+        },
+      });
+      let graph = await executeGraph();
+      let graphRepair = 0;
+      const graphRepairLimit = Math.min(settings.maxHealAttempts, 3);
+      while (!graph.ok && graphRepair < graphRepairLimit) {
+        assertActive(runId);
+        graphRepair += 1;
+        const detail = graph.errors.map((error) => `${error.nodeId}: ${error.error}`).join("; ") || "one or more nodes were blocked";
+        const resolutionPath = inferResolutionPath(detail);
+        const fileTree = await listWorkspaceFiles(root, 160);
+        meshBus.publish({
+          type: "VALIDATION_FAILED",
+          source: "Canvas dependency gate",
+          agentId: developer.id,
+          projectId: project.id,
+          runId,
+          severity: "error",
+          title: `Active canvas graph blocked · repair ${graphRepair}/${graphRepairLimit}`,
+          message: detail,
+          payload: { resolutionPath, fileTree, workspaceRoot: root },
+          requiresOverride: false,
+        });
+        publishAgentEnvelope({
+          from: "@canvas-orchestrator",
+          to: `@${developer.handle.replace(/^@/, "")}`,
+          type: "VALIDATION_REPORT",
+          payload: detail,
+          timestamp: new Date().toISOString(),
+          resolutionPath,
+          fileTree,
+          workspaceRoot: root,
+          status: "FAILED",
+        }, { agentId: developer.id, targetAgentId: developer.id, projectId: project.id, runId });
+        const repairEvidence = `${detail}\n\nresolutionPath: ${resolutionPath}\nworkspaceRoot: ${root}\nauthoritative fileTree:\n${fileTree.map((file) => `${root}/${file}`).join("\n")}`;
+        const repair = await generateFiles(
+          runId,
+          "implementation",
+          developer,
+          project,
+          root,
+          healPrompt(developer, project, run.prompt, repairEvidence, await readWorkspaceContext(root, 24_000), graphRepair),
+          `canvas graph repair ${graphRepair}`,
+          { guardrailTarget: agents.testing, guardrailStage: "canvas graph repair", signal: controller.signal },
+        );
+        const repaired = repair.files.length ? await applyFileBlocks(root, repair.files) : { written: [], errors: [] };
+        if (!repaired.written.length) break;
+        graph = await executeGraph();
+      }
+      if (!graph.ok) {
+        const detail = graph.errors.map((error) => `${error.nodeId}: ${error.error}`).join("; ") || "one or more nodes were blocked";
+        const resolutionPath = inferResolutionPath(detail);
+        const fileTree = await listWorkspaceFiles(root, 160);
+        meshBus.publish({
+          type: "VALIDATION_FAILED",
+          source: "Canvas dependency gate",
+          agentId: developer.id,
+          projectId: project.id,
+          runId,
+          severity: "error",
+          title: "Canvas repair budget exhausted",
+          message: detail,
+          payload: { resolutionPath, fileTree, workspaceRoot: root },
+          requiresOverride: false,
+        });
+        publishAgentEnvelope({
+          from: "@canvas-orchestrator",
+          to: `@${developer.handle.replace(/^@/, "")}`,
+          type: "VALIDATION_REPORT",
+          payload: detail,
+          timestamp: new Date().toISOString(),
+          resolutionPath,
+          fileTree,
+          workspaceRoot: root,
+          status: "BLOCKED",
+        }, { agentId: developer.id, targetAgentId: developer.id, projectId: project.id, runId });
+        throw new Error(`Active DAG failed after ${graphRepair} repair attempt(s): ${detail}\nresolutionPath: ${resolutionPath}`);
+      }
+      const generated = Object.values(graph.outputs).flatMap((value) => {
+        if (!value || typeof value !== "object" || typeof (value as { text?: unknown }).text !== "string") return [];
+        return parseFileBlocks((value as { text: string }).text);
+      });
+      const byPath = new Map<string, ParsedFile>();
+      for (const file of generated) {
+        const existing = byPath.get(file.path);
+        if (existing && existing.content !== file.content) {
+          throw new Error(`Active DAG produced conflicting versions of ${file.path}; assign that path to one agent node.`);
+        }
+        byPath.set(file.path, file);
+      }
+      if (!byPath.size) throw new Error("Active DAG completed without producing any parseable files.");
+      const applied = await applyFileBlocks(root, Array.from(byPath.values()));
+      if (!applied.written.length) throw new Error("The active DAG produced no files that could be written.");
+      for (const artifact of applied.written) await addArtifact(runId, artifact);
+      await setPhase(runId, "implementation", {
+        artifacts: applied.written,
+        progress: 100,
+      });
+      publishArtifactEvent(
+        "Active SDLC DAG",
+        runId,
+        project.id,
+        Array.from(byPath.values()).filter((file) => applied.written.includes(file.path)),
+        `Active SDLC DAG published ${applied.written.length} file(s)`,
+      );
+      await commitPhase(runId, root, `feat(${project.slug || "app"}): execute active SDLC DAG`, "implementation");
+      await finishPhase(runId, "implementation", "passed");
+      const verification = await processTesting(
+        runId,
+        project,
+        root,
+        agents,
+        run.prompt,
+        "Custom SDLC DAG topology",
+        settings,
+        run.options.allowConcurrency,
+      );
+      let canvasRuntime = await verifyProjectRuntime({ projectId: project.id, agent: developer, runId });
+      let canvasRepair = 0;
+      const canvasRepairLimit = Math.min(settings.maxHealAttempts, 3);
+      while (!canvasRuntime.passed && canvasRepair < canvasRepairLimit) {
+        assertActive(runId);
+        canvasRepair += 1;
+        await logPhase(runId, "testing", "warn", `Canvas runtime proof failed; repair ${canvasRepair}/${canvasRepairLimit}.`, canvasRuntime.detail.slice(-8_000));
+        const repairTree = await listWorkspaceFiles(root, 160);
+        const repairEvidence = `${canvasRuntime.detail}\n\nresolutionPath: ${inferResolutionPath(canvasRuntime.detail)}\nworkspaceRoot: ${root}\nauthoritative fileTree:\n${repairTree.map((file) => `${root}/${file}`).join("\n")}`;
+        const repair = await generateFiles(
+          runId,
+          "testing",
+          developer,
+          project,
+          root,
+          healPrompt(developer, project, run.prompt, repairEvidence, await readWorkspaceContext(root, 24_000), canvasRepair),
+          `canvas runtime proof repair ${canvasRepair}`,
+          { guardrailTarget: agents.testing, guardrailStage: "canvas runtime proof repair", signal: controller.signal },
+        );
+        const repaired = repair.files.length ? await applyFileBlocks(root, repair.files) : { written: [], errors: [] };
+        if (!repaired.written.length) break;
+        if (project.stack !== "python") await applyNodeManifest(root);
+        canvasRuntime = await verifyProjectRuntime({ projectId: project.id, agent: developer, runId });
+      }
+      if (!canvasRuntime.passed) {
+        await finishPhase(runId, "testing", "failed", `Canvas runtime validation failed after ${canvasRepair} repair attempt(s).`);
+        throw new Error(`Active DAG runtime validation failed; run cannot be marked complete.\n${canvasRuntime.detail.slice(-8_000)}`);
+      }
+      await logPhase(runId, "testing", "success", "Canvas runtime proof passed.", canvasRuntime.detail.slice(-4_000));
+      await beginPhase(runId, "deployment", agents.deployment?.id);
+      await processDeployment(
+        runId,
+        project,
+        root,
+        agents,
+        settings,
+        formatCommandResults(verification.results).slice(0, 6000),
+      );
+      const finalGit = await readGitState(root);
+      const finalFiles = await listWorkspaceFiles(root, 300);
+      await updateRun(runId, (item) => {
+        item.status = "passed";
+        item.completedAt = Date.now();
+        item.currentPhase = null;
+        item.git = { ...item.git, ...finalGit };
+        item.artifacts.fileTree = finalFiles;
+        item.artifacts.summary = `Built ${project.name} with the active custom DAG · ${finalFiles.length} files.`;
+      });
+      const finalRun = await getRun(runId);
+      if (finalRun) {
+        runEvents.publish(runId, { type: "snapshot", run: finalRun });
+        runEvents.publish(runId, { type: "done", runId, status: "passed" });
+      }
+      await saveProject({ ...project, lastRunId: runId, updatedAt: Date.now() });
+      return;
+    }
+
+    let spec = "";
+    let specTokens = 0;
+    if (phaseStartIndex <= 0) {
     // Phase 1 — Requirements
     const pm = agents.requirements;
     if (!pm) throw new Error("No product agent is configured.");
@@ -941,7 +1697,8 @@ async function executeRun(runId: string) {
         void logPhase(runId, "requirements", status.stage === "fallback" ? "warn" : "info", status.message);
       },
     });
-    let spec = specOutcome.result.text;
+    spec = specOutcome.result.text;
+    specTokens = specOutcome.result.outputTokens;
     let specGuard = await guardHandoff(
       runId,
       "requirements",
@@ -984,6 +1741,13 @@ async function executeRun(runId: string) {
     }
     await writeProjectFile(root, "docs/SPEC.md", spec);
     await addArtifact(runId, "docs/SPEC.md");
+    publishArtifactEvent(
+      pm.name,
+      runId,
+      project.id,
+      [{ path: "docs/SPEC.md", content: spec }],
+      `${pm.name} published the product specification`,
+    );
     await setPhase(runId, "requirements", {
       artifacts: ["docs/SPEC.md"],
       progress: 90,
@@ -992,7 +1756,7 @@ async function executeRun(runId: string) {
       runId,
       "requirements",
       "success",
-      `${pm.name} produced ${spec.length} chars of specification · ${specOutcome.result.outputTokens} tokens.`,
+      `${pm.name} produced ${spec.length} chars of specification · ${specTokens} tokens.`,
     );
     await commitPhase(
       runId,
@@ -1002,7 +1766,13 @@ async function executeRun(runId: string) {
     );
     await finishPhase(runId, "requirements", "passed");
     assertActive(runId);
+    } else {
+      spec = await fs.readFile(path.join(root, "docs/SPEC.md"), "utf8").catch(() => project.description);
+    }
 
+    let architecture = "";
+    let architectureTokens = 0;
+    if (phaseStartIndex <= 1) {
     // Phase 2 — Architecture
     const architect = agents.architecture;
     if (!architect) throw new Error("No architecture agent is configured.");
@@ -1020,7 +1790,8 @@ async function executeRun(runId: string) {
         void logPhase(runId, "architecture", status.stage === "fallback" ? "warn" : "info", status.message);
       },
     });
-    let architecture = archOutcome.result.text;
+    architecture = archOutcome.result.text;
+    architectureTokens = archOutcome.result.outputTokens;
     let archGuard = await guardHandoff(
       runId,
       "architecture",
@@ -1063,6 +1834,13 @@ async function executeRun(runId: string) {
     }
     await writeProjectFile(root, "docs/ARCHITECTURE.md", architecture);
     await addArtifact(runId, "docs/ARCHITECTURE.md");
+    publishArtifactEvent(
+      architect.name,
+      runId,
+      project.id,
+      [{ path: "docs/ARCHITECTURE.md", content: architecture }],
+      `${architect.name} published the architecture contract`,
+    );
     await setPhase(runId, "architecture", {
       artifacts: ["docs/ARCHITECTURE.md"],
       progress: 90,
@@ -1071,7 +1849,7 @@ async function executeRun(runId: string) {
       runId,
       "architecture",
       "success",
-      `${architect.name} mapped the architecture · ${archOutcome.result.outputTokens} tokens.`,
+      `${architect.name} mapped the architecture · ${architectureTokens} tokens.`,
     );
     await commitPhase(
       runId,
@@ -1081,7 +1859,11 @@ async function executeRun(runId: string) {
     );
     await finishPhase(runId, "architecture", "passed");
     assertActive(runId);
+    } else {
+      architecture = await fs.readFile(path.join(root, "docs/ARCHITECTURE.md"), "utf8").catch(() => "");
+    }
 
+    if (phaseStartIndex <= 2) {
     // Phase 3 — Implementation
     const developer = agents.implementation;
     if (!developer) throw new Error("No developer agent is configured.");
@@ -1093,6 +1875,9 @@ async function executeRun(runId: string) {
       agents,
       spec,
       architecture,
+      run.options.allowConcurrency,
+      controller.signal,
+      taskPlan,
     );
     await addArtifact(runId, "docs/SPEC.md");
     await finishPhase(runId, "implementation", "passed");
@@ -1103,10 +1888,16 @@ async function executeRun(runId: string) {
       `Implementation complete with ${implFiles.length} generated file(s).`,
     );
     assertActive(runId);
+    }
 
+    let verification = {
+      results: (await getRun(runId))?.phases.find((phase) => phase.id === "testing")?.commands ?? [],
+      failed: false,
+    };
+    if (phaseStartIndex <= 3) {
     // Phase 4 — Testing & Self-Healing
     await beginPhase(runId, "testing", agents.testing?.id);
-    const verification = await processTesting(
+    verification = await processTesting(
       runId,
       project,
       root,
@@ -1114,8 +1905,10 @@ async function executeRun(runId: string) {
       spec,
       architecture,
       settings,
+      run.options.allowConcurrency,
     );
     assertActive(runId);
+    }
 
     // Phase 5 — Deployment & CI
     await beginPhase(runId, "deployment", agents.deployment?.id);
@@ -1183,6 +1976,7 @@ export async function startRun(input: {
   maxHealAttempts?: number;
   allowConcurrency?: boolean;
   pushToGitHub?: boolean;
+  pipelineTopology?: Run["options"]["pipelineTopology"];
 }): Promise<Run> {
   const project = await getProject(input.projectId);
   if (!project) throw new Error("Project not found.");
@@ -1203,6 +1997,7 @@ export async function startRun(input: {
       maxHealAttempts: input.maxHealAttempts ?? settings.maxHealAttempts,
       allowConcurrency: input.allowConcurrency ?? false,
       pushToGitHub: input.pushToGitHub ?? false,
+      pipelineTopology: input.pipelineTopology,
     },
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -1234,6 +2029,28 @@ export async function cancelRun(runId: string): Promise<boolean> {
     return true;
   }
   return false;
+}
+
+export async function resumeRun(runId: string): Promise<Run> {
+  const run = await getRun(runId);
+  if (!run) throw new Error("Run not found.");
+  if (run.status !== "recoverable_paused" && run.status !== "interrupted") {
+    throw new Error("Only a run paused by a server restart can be resumed here.");
+  }
+  const phaseId = run.currentPhase ?? "requirements";
+  const controller = new AbortController();
+  activeRuns.set(runId, { controller, cancelled: false });
+  await updateRun(runId, (item) => {
+    item.status = "queued";
+    item.error = undefined;
+    item.completedAt = undefined;
+    item.currentPhase = phaseId;
+    item.updatedAt = Date.now();
+  });
+  const snapshot = await getRun(runId);
+  if (snapshot) runEvents.publish(runId, { type: "snapshot", run: snapshot });
+  void executeRun(runId, phaseId);
+  return snapshot!;
 }
 
 export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> {
@@ -1270,9 +2087,9 @@ export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> 
         .readFile(path.join(root, "docs/ARCHITECTURE.md"), "utf8")
         .catch(() => "");
       if (phaseId === "implementation") {
-        await processImplementation(runId, project, root, agents, spec, architecture);
+        await processImplementation(runId, project, root, agents, spec, architecture, run.options.allowConcurrency, active.signal);
       } else if (phaseId === "testing") {
-        await processTesting(runId, project, root, agents, spec, architecture, settings);
+        await processTesting(runId, project, root, agents, spec, architecture, settings, run.options.allowConcurrency);
       } else if (phaseId === "deployment") {
         const current = await getRun(runId);
         await processDeployment(

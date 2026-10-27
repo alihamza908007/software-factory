@@ -46,10 +46,10 @@ const config: Config = {
           foreground: "hsl(var(--card-foreground))",
         },
         factory: {
-          lime: "#c8f169",
-          amber: "#f5b544",
-          cyan: "#6fe7dd",
-          red: "#ff6b6b",
+          lime: "hsl(var(--factory-lime))",
+          amber: "hsl(var(--factory-amber))",
+          cyan: "hsl(var(--factory-cyan))",
+          red: "hsl(var(--factory-red))",
           ink: "#080a09",
           panel: "#0e1210",
           line: "#202823",
@@ -96,6 +96,23 @@ const config: Config = {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0" },
         },
+        shimmer: {
+          from: { backgroundPosition: "200% 0" },
+          to: { backgroundPosition: "-200% 0" },
+        },
+        glow: {
+          "0%, 100%": { boxShadow: "0 0 24px -6px rgba(200, 241, 105, 0.35)" },
+          "50%": { boxShadow: "0 0 40px -4px rgba(200, 241, 105, 0.55)" },
+        },
+        "status-ping": {
+          "0%": { boxShadow: "0 0 0 0 rgba(200, 241, 105, 0.45)" },
+          "80%": { boxShadow: "0 0 0 8px rgba(200, 241, 105, 0)" },
+          "100%": { boxShadow: "0 0 0 0 rgba(200, 241, 105, 0)" },
+        },
+        "live-ping": {
+          "0%": { transform: "scale(1)", opacity: "0.7" },
+          "80%, 100%": { transform: "scale(2.6)", opacity: "0" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -104,6 +121,10 @@ const config: Config = {
         scan: "scan 3s linear infinite",
         "fade-up": "fade-up 0.35s ease-out both",
         blink: "blink 1s step-end infinite",
+        shimmer: "shimmer 1.6s linear infinite",
+        glow: "glow 2s ease-out infinite",
+        "status-ping": "status-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite",
+        "live-ping": "live-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite",
       },
       backgroundImage: {
         "grid-factory":

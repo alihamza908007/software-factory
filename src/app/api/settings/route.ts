@@ -126,12 +126,12 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const merged = { ...current, ...patch };
+    // Preserve compatibility with existing settings files created before the
+    // single heavy local slot became a fixed hardware guardrail.
+    patch.maxConcurrentHeavy = 1;
+    const merged = { ...current, ...patch, maxConcurrentHeavy: 1 };
     if (merged.reserveMB >= merged.vramBudgetMB) {
       throw new Error("Reserve memory must be smaller than the VRAM budget.");
-    }
-    if (merged.maxConcurrentHeavy < 1 || merged.maxConcurrentHeavy > 4) {
-      throw new Error("Heavy model concurrency must be between 1 and 4.");
     }
     if (merged.maxConcurrentLight < 1 || merged.maxConcurrentLight > 4) {
       throw new Error("Light model concurrency must be between 1 and 4.");

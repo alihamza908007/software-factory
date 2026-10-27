@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS, defaultAgents } from "./constants";
 import type {
   Agent,
   AgentMetric,
+  CanvasTopology,
   ChatMessage,
   ChatThread,
   FactoryDb,
@@ -15,7 +16,7 @@ import type {
 export const DATA_ROOT = path.join(process.cwd(), ".data");
 export const WORKSPACES_ROOT = path.join(DATA_ROOT, "workspaces");
 const DB_PATH = path.join(DATA_ROOT, "factory.json");
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 type DbGlobal = typeof globalThis & {
   __factoryDb?: FactoryDb;
@@ -33,6 +34,8 @@ function freshDb(): FactoryDb {
     metrics: [],
     threads: [],
     settings: { ...DEFAULT_SETTINGS, updatedAt: now },
+    canvasTopology: null,
+    activeTopology: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -50,11 +53,22 @@ async function readFromDisk(): Promise<FactoryDb> {
     return {
       ...fresh,
       ...parsed,
+      version: DB_VERSION,
       settings: { ...fresh.settings, ...parsed.settings },
       agents: Array.isArray(parsed.agents) && parsed.agents.length ? parsed.agents : fresh.agents,
+      canvasTopology: parsed.canvasTopology ?? null,
+      activeTopology:
+        "activeTopology" in parsed
+          ? parsed.activeTopology ?? null
+          : parsed.canvasTopology ?? null,
       runs: (parsed.runs ?? []).map((run) =>
         run.status === "running" || run.status === "queued"
-          ? { ...run, status: "interrupted" as const, updatedAt: Date.now() }
+          ? {
+              ...run,
+              status: "recoverable_paused" as const,
+              error: "Server restarted while this run was active. Resume from its last saved phase.",
+              updatedAt: Date.now(),
+            }
           : run,
       ),
     };
@@ -102,6 +116,53 @@ export async function updateSettings(
     db.settings = { ...db.settings, ...patch, updatedAt: Date.now() };
     return db.settings;
   });
+}
+
+export interface CanvasDbSnapshot {
+  topology: CanvasTopology | null;
+  active: CanvasTopology | null;
+  updatedAt: number;
+}
+
+export async function getCanvasSnapshot(): Promise<CanvasDbSnapshot> {
+  const db = await getDb();
+  return {
+    topology: db.canvasTopology ?? null,
+    active: db.activeTopology ?? null,
+    updatedAt: db.updatedAt,
+  };
+}
+
+/** Persist the editor DAG and optionally promote it to the active run blueprint. */
+export async function saveCanvasTopology(
+  topology: CanvasTopology,
+  activate = false,
+): Promise<CanvasDbSnapshot> {
+  return updateDb((db) => {
+    const stamped = { ...topology, updatedAt: Date.now() };
+    db.canvasTopology = stamped;
+    if (activate) db.activeTopology = stamped;
+    return {
+      topology: db.canvasTopology ?? null,
+      active: db.activeTopology ?? null,
+      updatedAt: db.updatedAt,
+    };
+  });
+}
+
+export async function clearActiveTopology(): Promise<CanvasDbSnapshot> {
+  return updateDb((db) => {
+    db.activeTopology = null;
+    return {
+      topology: db.canvasTopology ?? null,
+      active: db.activeTopology ?? null,
+      updatedAt: db.updatedAt,
+    };
+  });
+}
+
+export async function getActiveTopology(): Promise<CanvasTopology | null> {
+  return (await getDb()).activeTopology ?? null;
 }
 
 export async function listAgents(): Promise<Agent[]> {
@@ -229,7 +290,7 @@ export async function appendThreadMessage(
     if (thread.title === "New conversation" && message.role === "user") {
       thread.title = message.content.slice(0, 64);
     }
-    if (thread.messages.length > 200) thread.messages = thread.messages.slice(-200);
+    if (thread.messages.length > 400) thread.messages = thread.messages.slice(-400);
     return thread;
   });
 }

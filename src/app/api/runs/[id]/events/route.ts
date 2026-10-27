@@ -37,7 +37,7 @@ export async function GET(
         send("snapshot", { type: "snapshot", run });
       }
 
-      if (["passed", "failed", "cancelled", "interrupted"].includes(run.status)) {
+      if (["passed", "failed", "cancelled", "interrupted", "recoverable_paused"].includes(run.status)) {
         setTimeout(() => {
           if (!closed) {
             closed = true;

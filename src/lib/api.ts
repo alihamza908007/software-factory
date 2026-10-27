@@ -9,9 +9,10 @@ export function apiError(error: unknown, status = 500) {
   return NextResponse.json({ error: message }, { status });
 }
 
-export function sseChunk(event: string, data: unknown): Uint8Array {
+export function sseChunk(event: string, data: unknown, id?: string | number): Uint8Array {
   const encoder = new TextEncoder();
-  return encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  const idLine = id === undefined ? "" : `id: ${id}\n`;
+  return encoder.encode(`${idLine}event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
 export function sseHeaders(): HeadersInit {

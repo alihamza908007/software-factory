@@ -47,6 +47,8 @@ export interface Agent {
   handle: string;
   role: string;
   description: string;
+  /** Optional explicit mesh routing tags; older persisted agents infer these from role/profile text. */
+  capabilities?: string[];
   systemPrompt: string;
   modelKey: string;
   fallbackModelKey?: string;
@@ -101,7 +103,8 @@ export type RunStatus =
   | "passed"
   | "failed"
   | "cancelled"
-  | "interrupted";
+  | "interrupted"
+  | "recoverable_paused";
 
 export type PhaseId =
   | "requirements"
@@ -206,6 +209,7 @@ export interface Run {
     allowConcurrency: boolean;
     pushToGitHub: boolean;
     skipDeployment?: boolean;
+    pipelineTopology?: CanvasTopology;
   };
   error?: string;
   startedAt?: number;
@@ -231,8 +235,22 @@ export interface ChatMessage {
     outputTokens: number;
     costUsd: number;
     vramMB: number;
+    fellBack?: boolean;
+    queuedMs?: number;
   };
   handoffFrom?: string;
+  /** Guardrail score attached to the handoff that produced this message. */
+  handoffScore?: number;
+  /** Workspace-relative files written (or proposed) by this message. */
+  artifacts?: string[];
+  /** Silent Witness result for the artifacts published by this message. */
+  validation?: {
+    reportId: string;
+    score: number;
+    passed: boolean;
+    findings: number;
+    topFinding?: string;
+  };
   runId?: string;
   createdAt: number;
   pending?: boolean;
@@ -372,6 +390,14 @@ export interface CanvasNodeData {
   status?: "idle" | "queued" | "running" | "passed" | "failed" | "blocked";
   detail?: string;
   guardrailScore?: number;
+  /** Wall-clock execution time for the last DAG run. */
+  durationMs?: number;
+  /** Tokens emit/consumed by the node's last model call. */
+  tokens?: number;
+  /** Last error returned by the node, kept for the inspector. */
+  error?: string;
+  /** Short preview of the node output, rendered in the inspector. */
+  outputPreview?: string;
 }
 
 export interface CanvasTopology {
@@ -400,6 +426,10 @@ export interface FactoryDb {
   metrics: AgentMetric[];
   threads: ChatThread[];
   settings: FactorySettings;
+  /** Last saved DAG in the canvas editor. */
+  canvasTopology?: CanvasTopology | null;
+  /** DAG used by autonomous runs, the run launcher and chat. */
+  activeTopology?: CanvasTopology | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -421,6 +451,175 @@ export type RunEvent =
   | { type: "done"; runId: string; status: RunStatus }
   | { type: "error"; runId: string; message: string };
 
+export type MeshEventType =
+  | "ARTIFACT_CREATED"
+  | "TEST_FAILED"
+  | "SCHEMA_UPDATED"
+  | "SECURITY_WARNING"
+  | "VALIDATION_STARTED"
+  | "VALIDATION_PASSED"
+  | "VALIDATION_FAILED"
+  | "VALIDATION_OVERRIDDEN"
+  | "AGENT_STATUS"
+  | "HANDOFF"
+  | "AGENT_ENVELOPE"
+  | "ROUTING_ERROR"
+  | "TASK_CONTRACT"
+  | "PRE_FLIGHT_BLOCKED"
+  | "POST_FLIGHT_PASSED"
+  | "POST_FLIGHT_BLOCKED"
+  | "SCOPE_ADVISORY"
+  | "TERMINAL_OUTPUT"
+  | "MEMORY_CONSTRAINT"
+  | "AUTOMATION_STARTED"
+  | "AUTOMATION_PASSED"
+  | "AUTOMATION_FAILED"
+  | "CANVAS_RUN_STARTED"
+  | "CANVAS_RUN_COMPLETED"
+  | "NEGOTIATION_STARTED"
+  | "NEGOTIATION_MESSAGE"
+  | "NEGOTIATION_RESOLVED"
+  | "NEGOTIATION_FAILED";
+
+export type MeshSeverity = "info" | "success" | "warning" | "error";
+
+export type MeshAgentStatus =
+  | "idle"
+  | "thinking"
+  | "communicating"
+  | "validating"
+  | "executing"
+  | "paused"
+  | "error";
+
+export interface MeshEvent {
+  id: string;
+  /** Monotonic bus sequence, used for SSE resume and client-side dedupe. */
+  sequence?: number;
+  type: MeshEventType;
+  at: number;
+  source: string;
+  target?: string;
+  agentId?: string;
+  targetAgentId?: string;
+  threadId?: string;
+  projectId?: string;
+  runId?: string;
+  severity: MeshSeverity;
+  title: string;
+  message: string;
+  payload?: Record<string, unknown>;
+  requiresOverride?: boolean;
+}
+
+export interface AgentConstraint {
+  id: string;
+  agentId: string;
+  rule: string;
+  source: "validator" | "error" | "guardrail" | "dead-loop" | "negotiation" | "manual";
+  evidence?: string;
+  createdAt: number;
+  hits: number;
+}
+
+export interface AgentHandoffMemory {
+  id: string;
+  agentId: string;
+  taskId: string;
+  /** Three-sentence semantic summary retained after scratchpad contents expire. */
+  summary: string;
+  /** Workspace-relative file pointers, never raw file contents. */
+  modifiedFiles: string[];
+  createdAt: number;
+}
+
+export interface AgentMemory {
+  agentId: string;
+  constraints: AgentConstraint[];
+  /** Long-term, pointer-only handoff history. Raw scratchpads are never stored here. */
+  handoffs?: AgentHandoffMemory[];
+  updatedAt: number;
+}
+
+export interface AgentAnalytics {
+  agentId: string;
+  name: string;
+  handle: string;
+  enabled: boolean;
+  tasksAssigned: number;
+  accepted: number;
+  rejected: number;
+  blocked: number;
+  acceptanceRate: number;
+  postFlightPassed: number;
+  postFlightFailed: number;
+  postFlightAttempts: number;
+  firstPasses: number;
+  firstPassRate: number;
+  tokensConsumed: number;
+  artifactFiles: number;
+  artifactBytes: number;
+  artifactPaths: string[];
+  lastActivityAt: number;
+}
+
+export interface MeshAgentState {
+  agentId: string;
+  status: MeshAgentStatus;
+  detail?: string;
+  updatedAt: number;
+}
+
+export interface ValidationFinding {
+  id: string;
+  severity: "info" | "warning" | "error";
+  code: string;
+  title: string;
+  detail: string;
+  suggestion: string;
+  path?: string;
+}
+
+export interface ValidationReport {
+  id: string;
+  agentId?: string;
+  threadId?: string;
+  projectId?: string;
+  runId?: string;
+  score: number;
+  passed: boolean;
+  witnessModel?: string;
+  findings: ValidationFinding[];
+  durationMs: number;
+  createdAt: number;
+}
+
+/** Structured pointer-based handoff attached to the outgoing agent envelope. */
+export interface HandoffSummary {
+  /** Exactly three sentences describing the completed work. */
+  summary: string;
+  modifiedFiles: string[];
+  verifiedArtifacts: number;
+  findings: number;
+}
+
+export interface NegotiationMessage {
+  id: string;
+  negotiationId: string;
+  round: number;
+  fromAgent: string;
+  fromAgentId: string;
+  toAgent: string;
+  content: string;
+  createdAt: number;
+}
+
+export interface MeshControlSnapshot {
+  pausedAgentIds: string[];
+  overriddenEventIds: string[];
+  updatedAt: number;
+}
+
 export interface ChatStreamEvent {
   type:
     | "start"
@@ -428,9 +627,12 @@ export interface ChatStreamEvent {
     | "agent"
     | "metrics"
     | "handoff"
+    | "routing"
     | "guardrail"
     | "dead_loop"
     | "message"
+    | "artifact"
+    | "validation"
     | "run"
     | "error"
     | "done";

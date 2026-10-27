@@ -10,7 +10,7 @@ export function ValidatorNode({ data, selected }: NodeProps<ValidatorFlowNode>) 
   return (
     <div
       className={cn(
-        "w-[210px] rounded-xl border bg-[#0c1112] shadow-xl",
+        "w-[210px] rounded-xl border bg-card shadow-xl",
         selected ? "border-factory-cyan/60" : "border-border/80",
         data.status === "running" && "border-factory-amber/60",
         failed && "border-factory-red/60",

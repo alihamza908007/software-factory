@@ -98,7 +98,7 @@ function mapLmStudioModel(raw: { id: string }, online: boolean): ModelInfo {
     name: raw.id,
     kind: "local",
     capabilities: ["completion"],
-    heavy: /(?:12|13|14|20|27|30|32|34|70)b/i.test(raw.id),
+    heavy: isHeavyLocalModel(raw.id),
     vramEstimateMB: 12_000,
     costInputPerMTok: 0,
     costOutputPerMTok: 0,
@@ -131,6 +131,12 @@ function estimateVramMB(sizeBytes?: number): number {
   return Math.round(weightsMB * 1.12 + 2048);
 }
 
+function isHeavyLocalModel(name: string, parameterSize?: string, vramEstimateMB = 0): boolean {
+  const size = `${parameterSize ?? ""} ${name}`.match(/(?:^|[^\d.])(\d+(?:\.\d+)?)\s*b(?:\b|$)/i);
+  if (size) return Number(size[1]) > 13;
+  return vramEstimateMB >= 14_000;
+}
+
 function mapOllamaModel(raw: {
   name: string;
   size?: number;
@@ -155,7 +161,7 @@ function mapOllamaModel(raw: {
     quantization: raw.details?.quantization_level,
     family: raw.details?.family ?? raw.details?.families?.[0],
     capabilities: raw.capabilities ?? ["completion", "tools"],
-    heavy: vramEstimateMB >= 14_000,
+    heavy: isHeavyLocalModel(raw.name, raw.details?.parameter_size, vramEstimateMB),
     vramEstimateMB,
     costInputPerMTok: 0,
     costOutputPerMTok: 0,

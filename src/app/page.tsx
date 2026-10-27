@@ -76,7 +76,7 @@ export default function CommandCenterPage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-[1.55fr_1fr]">
-        <section className="relative overflow-hidden rounded-xl border border-border/80 bg-gradient-to-br from-[#111711] via-[#0d120e] to-[#0a0d0b] p-5 md:p-6">
+        <section className="relative overflow-hidden rounded-xl border border-border/80 bg-gradient-to-br from-secondary via-card to-background p-5 md:p-6">
           <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-factory-lime/10 blur-3xl" />
           <div className="pointer-events-none absolute inset-y-0 left-0 w-px bg-gradient-to-b from-transparent via-factory-lime/50 to-transparent" />
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -223,7 +223,7 @@ export default function CommandCenterPage() {
               resources.running.map((reservation) => (
                 <div
                   key={reservation.id}
-                  className="flex items-center gap-2 rounded-md border border-border/60 bg-black/20 px-2.5 py-2"
+                  className="flex items-center gap-2 rounded-md border border-border/60 bg-secondary/50 px-2.5 py-2"
                 >
                   <span className="flex h-6 w-6 items-center justify-center rounded bg-factory-amber/10 text-factory-amber">
                     <Cpu className="h-3 w-3" />
@@ -350,7 +350,7 @@ export default function CommandCenterPage() {
                             ? "bg-factory-amber"
                             : log.level === "command"
                               ? "bg-factory-cyan"
-                              : "bg-white/25",
+                              : "bg-muted-foreground",
                     )}
                   />
                   <div className="min-w-0">
@@ -396,7 +396,7 @@ export default function CommandCenterPage() {
               <Link
                 key={run.id}
                 href={`/pipeline?run=${run.id}`}
-                className="grid grid-cols-1 gap-2 border-b border-border/40 px-4 py-3 text-xs transition-colors last:border-0 hover:bg-white/[0.03] md:grid-cols-[1.5fr_120px_140px_120px_100px] md:items-center md:gap-4"
+                className="grid grid-cols-1 gap-2 border-b border-border/40 px-4 py-3 text-xs transition-colors last:border-0 hover:bg-secondary/50 md:grid-cols-[1.5fr_120px_140px_120px_100px] md:items-center md:gap-4"
               >
                 <div className="flex min-w-0 items-center gap-2">
                   <span
@@ -408,7 +408,7 @@ export default function CommandCenterPage() {
                           ? "bg-factory-lime/70"
                           : run.status === "failed"
                             ? "bg-factory-red"
-                            : "bg-white/20",
+                            : "bg-muted-foreground",
                     )}
                   />
                   <span className="truncate text-foreground/90">{truncate(run.prompt, 90)}</span>
@@ -494,7 +494,7 @@ function QuickCard({
   return (
     <Link href={href} className="panel group flex items-center justify-between p-4 transition-colors hover:border-white/20">
       <div className="flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-black/20 text-factory-cyan">
+        <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-secondary/50 text-factory-cyan">
           {icon}
         </span>
         <div>

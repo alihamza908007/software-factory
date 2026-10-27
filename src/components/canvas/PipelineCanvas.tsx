@@ -40,6 +40,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { AgentNode } from "./AgentNode";
 import { ValidatorNode } from "./ValidatorNode";
 import { RouterNode } from "./RouterNode";
@@ -104,8 +105,16 @@ export function PipelineCanvas() {
   const {
     agents,
     models,
+    projects,
     canvasTopology,
     setCanvasTopology,
+    setActivePipelineTopology,
+    activePipelineTopology,
+    canvasValidation,
+    canvasLoading,
+    fetchCanvas,
+    saveCanvasTopology,
+    deactivateCanvasTopology,
     canvasLogs,
     setCanvasLogs,
     appendCanvasLog,
@@ -117,12 +126,24 @@ export function PipelineCanvas() {
   const [busy, setBusy] = useState(false);
   const [validating, setValidating] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [lastValidation, setLastValidation] = useState<ReturnType<typeof validateCanvasTopology> | null>(null);
+  const [projectId, setProjectId] = useState("");
+  const [brief, setBrief] = useState("");
+  const [applyArtifacts, setApplyArtifacts] = useState(true);
   const initialized = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (initialized.current) return;
+    void fetchCanvas();
+  }, [fetchCanvas]);
+
+  useEffect(() => {
+    if (!projectId && projects[0]) setProjectId(projects[0].id);
+  }, [projects, projectId]);
+
+  useEffect(() => {
+    if (initialized.current || canvasLoading) return;
     let topology = canvasTopology;
     if (!topology) {
       try {
@@ -138,7 +159,7 @@ export function PipelineCanvas() {
     setNodes(toFlowNodes(topology));
     setEdges(toFlowEdges(topology));
     setCanvasTopology(topology);
-  }, [agents, canvasTopology, setCanvasTopology, setEdges, setNodes]);
+  }, [agents, canvasLoading, canvasTopology, setCanvasTopology, setEdges, setNodes]);
 
   useEffect(() => {
     if (!initialized.current) return;
@@ -146,17 +167,19 @@ export function PipelineCanvas() {
     saveTimer.current = setTimeout(() => {
       const topology = toTopology(nodes, edges);
       setCanvasTopology(topology);
-      setSavedAt(Date.now());
       try {
         window.localStorage.setItem(STORAGE_KEY, JSON.stringify(topology));
       } catch {
         // storage full or blocked
       }
-    }, 350);
+      void saveCanvasTopology(topology, false).then((ok) => {
+        if (ok) setSavedAt(Date.now());
+      });
+    }, 600);
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [nodes, edges, setCanvasTopology]);
+  }, [nodes, edges, saveCanvasTopology, setCanvasTopology]);
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
   const selectedEdge = edges.find((edge) => edge.id === selectedEdgeId) ?? null;
@@ -272,6 +295,7 @@ export function PipelineCanvas() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Validation failed.");
       const validation = data.validation as ReturnType<typeof validateCanvasTopology>;
+      setLastValidation(validation);
       if (validation.ok) {
         toast.success("Canvas topology is valid", {
           description: `${validation.nodeCount} nodes · ${validation.edgeCount} edges${
@@ -297,9 +321,14 @@ export function PipelineCanvas() {
   async function runCanvas() {
     if (busy) return;
     const topology = toTopology(nodes, edges);
-    const validation = validateCanvasTopology(topology);
+    const validation = validateCanvasTopology(topology, agents);
+    setLastValidation(validation);
     if (!validation.ok) {
       toast.error("Fix the canvas before running", { description: validation.errors.join(" ") });
+      return;
+    }
+    if (applyArtifacts && !projectId) {
+      toast.error("Choose a project before applying artifacts.");
       return;
     }
     const controller = new AbortController();
@@ -317,7 +346,13 @@ export function PipelineCanvas() {
       const res = await fetch("/api/canvas", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "run", topology }),
+        body: JSON.stringify({
+          action: "run",
+          topology,
+          projectId: projectId || undefined,
+          initialInput: brief.trim() || undefined,
+          applyArtifacts,
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -356,6 +391,10 @@ export function PipelineCanvas() {
                               status: payload.status ?? node.data.status,
                               detail: payload.detail ?? node.data.detail,
                               guardrailScore: payload.score ?? node.data.guardrailScore,
+                              durationMs: payload.durationMs ?? node.data.durationMs,
+                              tokens: payload.tokens ?? node.data.tokens,
+                              error: payload.error ?? node.data.error,
+                              outputPreview: payload.outputPreview ?? node.data.outputPreview,
                             } as FlowNodeData,
                           }
                         : node,
@@ -408,15 +447,60 @@ export function PipelineCanvas() {
     toast.success("Canvas DAG exported.");
   }
 
-  function saveTopology() {
+  async function saveTopology() {
     const topology = toTopology(nodes, edges);
     setCanvasTopology(topology);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(topology));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(topology));
+    } catch {
+      // storage full or blocked; the server copy is authoritative
+    }
+    const ok = await saveCanvasTopology(topology, false);
+    if (!ok) {
+      toast.error("Canvas could not be saved to the server.");
+      return;
+    }
     setSavedAt(Date.now());
-    appendCanvasLog("[canvas] Topology saved.");
+    appendCanvasLog("[canvas] Topology saved to the factory database.");
     toast.success("Canvas topology saved.", {
-      description: "It is now the execution DAG used by this browser.",
+      description: "The server copy is now the durable DAG for this factory.",
     });
+  }
+
+  async function exportToActivePipeline() {
+    const topology = toTopology(nodes, edges);
+    const validation = validateCanvasTopology(topology, agents);
+    setLastValidation(validation);
+    if (!validation.ok) {
+      toast.error("Canvas cannot be activated", { description: validation.errors.join(" ") });
+      return;
+    }
+    setCanvasTopology(topology);
+    setActivePipelineTopology(topology);
+    const ok = await saveCanvasTopology(topology, true);
+    if (!ok) {
+      toast.error("Canvas could not be activated on the server.");
+      return;
+    }
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(topology));
+    } catch {
+      // best effort cache
+    }
+    appendCanvasLog("[canvas] Topology saved and activated as the SDLC blueprint.");
+    toast.success("Topology is now the active SDLC blueprint", {
+      description: `${topology.nodes.length} nodes · ${topology.edges.length} connections`,
+    });
+  }
+
+  async function clearActive() {
+    const ok = await deactivateCanvasTopology();
+    if (!ok) {
+      toast.error("Could not deactivate the active DAG.");
+      return;
+    }
+    appendCanvasLog("[canvas] Active SDLC blueprint cleared; default phases will run.");
+    toast.success("Active DAG cleared");
   }
 
   const nodeLabel = selectedNode?.data.label ?? "Inspector";
@@ -459,6 +543,15 @@ export function PipelineCanvas() {
           <Button variant="ghost" size="sm" onClick={saveTopology} disabled={busy}>
             <Save className="h-3 w-3" /> Save
           </Button>
+          <Button variant={activePipelineTopology?.updatedAt === canvasTopology?.updatedAt ? "secondary" : "outline"} size="sm" onClick={() => void exportToActivePipeline()} disabled={busy}>
+            <GitBranch className="h-3 w-3" />
+            {activePipelineTopology?.updatedAt === canvasTopology?.updatedAt ? "Active SDLC" : "Export to Active SDLC Pipeline"}
+          </Button>
+          {activePipelineTopology && (
+            <Button variant="ghost" size="sm" onClick={() => void clearActive()} disabled={busy}>
+              <RotateCcw className="h-3 w-3" /> Deactivate
+            </Button>
+          )}
           <Button variant="ghost" size="sm" onClick={exportTopology}>
             <Download className="h-3 w-3" /> Export
           </Button>
@@ -497,6 +590,36 @@ export function PipelineCanvas() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-secondary/50 px-2.5 py-2">
+          <span className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">Run context</span>
+          <Select value={projectId} onValueChange={setProjectId}>
+            <SelectTrigger className="h-7 w-[170px] text-[10px]">
+              <SelectValue placeholder="No project workspace" />
+            </SelectTrigger>
+            <SelectContent>
+              {projects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            value={brief}
+            onChange={(event) => setBrief(event.target.value)}
+            placeholder="Build brief for the first node (optional)"
+            className="h-7 min-w-[220px] flex-1 text-[10px]"
+          />
+          <label className="flex items-center gap-1.5 font-mono text-[8px] text-muted-foreground">
+            write generated files
+            <Switch
+              checked={applyArtifacts}
+              onCheckedChange={setApplyArtifacts}
+              className="h-4 w-7 [&>span]:h-3 [&>span]:w-3"
+            />
+          </label>
+        </div>
+
         <div className="h-[620px] w-full">
           <ReactFlow<FactoryFlowNode, Edge>
             nodes={nodes}
@@ -519,14 +642,14 @@ export function PipelineCanvas() {
             }}
             fitView
             proOptions={{ hideAttribution: true }}
-            className="bg-[#080a09]"
+            className="bg-background"
           >
             <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#223027" />
-            <Controls className="!border-border !bg-[#0e1210]" />
+            <Controls className="!border-border !bg-card" />
             <MiniMap
               pannable
               zoomable
-              className="!border !border-border !bg-[#0b0f0d]"
+              className="!border !border-border !bg-card"
               nodeColor={(node) => {
                 if (node.type === "validator") return "#6fe7dd";
                 if (node.type === "router") return "#f5b544";
@@ -655,6 +778,33 @@ export function PipelineCanvas() {
                   </p>
                 </div>
               )}
+              {(selectedNode.data.durationMs ||
+                selectedNode.data.tokens ||
+                selectedNode.data.error ||
+                selectedNode.data.outputPreview) && (
+                <div className="rounded-md border border-border/60 bg-secondary/50 p-2">
+                  <div className="flex flex-wrap items-center gap-2 font-mono text-[8px] text-muted-foreground">
+                    <span>status {selectedNode.data.status ?? "idle"}</span>
+                    {selectedNode.data.durationMs ? (
+                      <span>{Math.round(selectedNode.data.durationMs)} ms</span>
+                    ) : null}
+                    {selectedNode.data.tokens ? <span>{selectedNode.data.tokens} tokens</span> : null}
+                    {typeof selectedNode.data.guardrailScore === "number" && (
+                      <span className="text-factory-lime">{selectedNode.data.guardrailScore}/100</span>
+                    )}
+                  </div>
+                  {selectedNode.data.error && (
+                    <p className="mt-1 break-words font-mono text-[9px] leading-relaxed text-red-300">
+                      {selectedNode.data.error}
+                    </p>
+                  )}
+                  {!selectedNode.data.error && selectedNode.data.outputPreview && (
+                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-secondary/50 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+                      {selectedNode.data.outputPreview}
+                    </pre>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-[10px] text-muted-foreground">
@@ -662,6 +812,36 @@ export function PipelineCanvas() {
               a payload edge.
             </div>
           )}
+        </section>
+
+        <section className="panel p-3">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="eyebrow">Topology checks</span>
+            <Badge variant={lastValidation?.ok ?? canvasValidation?.ok ? "success" : "warning"}>
+              {(lastValidation ?? canvasValidation)?.errors.length ?? 0} errors
+            </Badge>
+          </div>
+          <div className="space-y-1 text-[9px] leading-relaxed">
+            {(lastValidation ?? canvasValidation)?.errors.map((error) => (
+              <p key={error} className="rounded border border-red-400/20 bg-red-400/5 px-2 py-1 text-red-300">
+                {error}
+              </p>
+            ))}
+            {(lastValidation ?? canvasValidation)?.warnings.slice(0, 6).map((warning) => (
+              <p key={warning} className="rounded border border-factory-amber/20 bg-factory-amber/5 px-2 py-1 text-factory-amber/90">
+                {warning}
+              </p>
+            ))}
+            {!lastValidation && !canvasValidation && (
+              <p className="px-1 py-4 text-center text-muted-foreground">
+                Validate the DAG to inspect router branches, missing agents and duplicate edges.
+              </p>
+            )}
+            {!!(lastValidation ?? canvasValidation)?.ok &&
+              !(lastValidation ?? canvasValidation)?.warnings.length && (
+                <p className="px-1 py-2 text-factory-lime">No topology issues detected.</p>
+              )}
+          </div>
         </section>
 
         <section className="panel p-3">
@@ -675,7 +855,7 @@ export function PipelineCanvas() {
                 key={agent.id}
                 onClick={() => addNode("agent", agent.id)}
                 disabled={busy}
-                className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-black/20 px-2 py-1.5 text-left transition-colors hover:border-factory-lime/30 hover:bg-factory-lime/5 disabled:opacity-50"
+                className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-secondary/50 px-2 py-1.5 text-left transition-colors hover:border-factory-lime/30 hover:bg-factory-lime/5 disabled:opacity-50"
               >
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: agent.color }} />
                 <span className="min-w-0 flex-1">
@@ -702,7 +882,7 @@ export function PipelineCanvas() {
               clear
             </Button>
           </div>
-          <div className="max-h-[180px] overflow-y-auto rounded border border-border/50 bg-black/30 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+          <div className="max-h-[180px] overflow-y-auto rounded border border-border/50 bg-secondary/50 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
             {canvasLogs.slice(-60).map((line, index) => (
               <div key={`${index}-${line.slice(0, 12)}`} className={cn(line.includes("[error]") && "text-red-300")}>
                 {line}
