@@ -211,7 +211,7 @@ export default function ChatPage() {
                   <div
                     key={thread.id}
                     className={cn(
-                      "group flex items-start gap-1 rounded-md px-2 py-2 transition-colors",
+                      "group flex items-start gap-1 rounded-md px-2 py-2 transition-colors animate-fade-up",
                       thread.id === threadId ? "bg-factory-lime/10" : "hover:bg-secondary/50",
                     )}
                   >

@@ -1,5 +1,5 @@
 import { apiError, json } from "@/lib/api";
-import { createThread, listThreads } from "@/lib/db";
+import { createThread, listThreads, projectThreadMessages } from "@/lib/db";
 import type { ChatThread } from "@/lib/types";
 import { uid } from "@/lib/utils";
 
@@ -10,18 +10,21 @@ export async function GET() {
   try {
     const threads = await listThreads();
     return json({
-      threads: threads.map((thread) => ({
+      threads: threads.map((thread) => {
+      const projection = projectThreadMessages(thread.messages);
+      return {
         id: thread.id,
         title: thread.title,
         projectId: thread.projectId,
         createdAt: thread.createdAt,
         updatedAt: thread.updatedAt,
-        messageCount: thread.messages.length,
-        directMessageCount: thread.messages.filter((message) => !message.handoffFrom).length,
-        handoffCount: thread.messages.filter((message) => Boolean(message.handoffFrom)).length,
+        messageCount: projection.totalCount,
+        directMessageCount: projection.directCount,
+        handoffCount: projection.handoffCount,
         lastMessage: thread.messages.at(-1) ?? null,
-        lastDirectMessage: thread.messages.filter((message) => !message.handoffFrom).at(-1) ?? null,
-      })),
+        lastDirectMessage: projection.direct.at(-1) ?? null,
+      };
+    }),
     });
   } catch (error) {
     return apiError(error);

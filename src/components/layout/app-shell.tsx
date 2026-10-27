@@ -367,6 +367,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   {health?.hardware.cores ?? "—"} cores
                 </span>
               </div>
+              <div className="panel-inset flex items-center gap-2 px-2.5 py-1.5" title="VRAM / memory utilization">
+                <CircuitBoard className="h-3.5 w-3.5 text-factory-amber" />
+                <span className="font-mono text-[10px] text-muted-foreground">
+                  {Math.round(((resources?.usedMB ?? 0) / Math.max(1, resources?.budgetMB ?? 1)) * 100)}% mem
+                </span>
+              </div>
             </div>
 
             <Button

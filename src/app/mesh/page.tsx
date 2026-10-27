@@ -817,6 +817,7 @@ export default function MeshPage() {
         description="Agents publish events, learn constraints from failure and reconcile peer contracts in the background. The Silent Witness reviews artifacts without blocking the factory."
         actions={
           <>
+            <span className="live-dot" aria-hidden title={meshConnected ? "mesh live" : "reconnecting"} />
             <Button variant="outline" size="sm" asChild>
               <Link href="/chat">
                 Full chat

@@ -96,7 +96,7 @@ function agentStats(agentId: string): AgentStats {
   return created;
 }
 
-async function load(): Promise<void> {
+export async function load(): Promise<void> {
   const store = state();
   if (store.loaded) return;
   if (store.loading) return store.loading;
@@ -203,7 +203,7 @@ function touch(stats: AgentStats): void {
   stats.lastActivityAt = Date.now();
 }
 
-function handleEvent(event: MeshEvent): void {
+export function handleEvent(event: MeshEvent): void {
   const store = state();
   if (store.processedEvents.has(event.id)) return;
   store.processedEvents.add(event.id);

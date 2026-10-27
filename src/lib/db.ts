@@ -13,7 +13,9 @@ import type {
   Run,
 } from "./types";
 
-export const DATA_ROOT = path.join(process.cwd(), ".data");
+export const DATA_ROOT = process.env.FACTORY_DATA_ROOT
+  ? path.resolve(process.env.FACTORY_DATA_ROOT)
+  : path.join(process.cwd(), ".data");
 export const WORKSPACES_ROOT = path.join(DATA_ROOT, "workspaces");
 const DB_PATH = path.join(DATA_ROOT, "factory.json");
 const DB_VERSION = 2;
@@ -343,4 +345,22 @@ export async function resetDb(): Promise<FactoryDb> {
   globalStore.__factoryDb = db;
   await persist(db);
   return db;
+}
+
+export function projectThreadMessages(messages: ChatMessage[]): {
+  direct: ChatMessage[];
+  handoffs: ChatMessage[];
+  directCount: number;
+  handoffCount: number;
+  totalCount: number;
+} {
+  const direct = messages.filter((message) => !message.handoffFrom);
+  const handoffs = messages.filter((message) => Boolean(message.handoffFrom));
+  return {
+    direct,
+    handoffs,
+    directCount: direct.length,
+    handoffCount: handoffs.length,
+    totalCount: messages.length,
+  };
 }
