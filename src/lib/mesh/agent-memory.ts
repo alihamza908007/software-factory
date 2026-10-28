@@ -241,10 +241,13 @@ export async function clearAgentMemory(agentId?: string): Promise<void> {
 
 export async function buildMemoryPrompt(
   agentId: string,
-  limit = 10,
+  limit = 8,
 ): Promise<string | undefined> {
   const memory = (await load()).agents[agentId];
-  const constraints = (memory?.constraints ?? []).slice(-limit);
+  const constraints = (memory?.constraints ?? [])
+    .slice()
+    .sort((a, b) => (b.hits ?? 1) - (a.hits ?? 1) || b.createdAt - a.createdAt)
+    .slice(0, limit);
   const handoffs = (memory?.handoffs ?? []).slice(-3);
   if (!constraints.length && !handoffs.length) return undefined;
   const evidenceByConstraint = new Map(

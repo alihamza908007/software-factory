@@ -241,17 +241,20 @@ export function useChatSession() {
       };
       const summary = data.summary ?? summaryFromReport(data.report);
       if (data.messageId) patchMessage(data.messageId, { validation: summary });
-      const actionable = data.report.findings.filter(
-        (finding: ValidationFinding) => finding.severity !== "info",
-      );
-      toast[data.report.passed ? "success" : "warning"](
-        `Silent Witness ${data.report.score}/100`,
-        {
-          description:
-            actionable[0]?.title ??
-            `${data.report.findings.length} finding(s) across the published artifacts.`,
-        },
-      );
+      // Only toast on validation failure or security finding to avoid toast clutter
+      if (!data.report.passed) {
+        const actionable = data.report.findings.filter(
+          (finding: ValidationFinding) => finding.severity !== "info",
+        );
+        toast.warning(
+          `Validation Notice · ${data.report.score}/100`,
+          {
+            description:
+              actionable[0]?.title ??
+              `${data.report.findings.length} finding(s) across published artifacts.`,
+          },
+        );
+      }
       return;
     }
     if (event === "handoff") {
@@ -263,9 +266,6 @@ export function useChatSession() {
         guardrail?: GuardrailResult;
       };
       setHandoff(`${data.from} → ${data.to}`);
-      toast.message("Agent handoff", {
-        description: `${data.from} passed the payload to ${data.to}.`,
-      });
       setMessages((current) => [
         ...current,
         {
@@ -294,14 +294,17 @@ export function useChatSession() {
     }
     if (event === "guardrail") {
       const data = payload as { result: GuardrailResult };
-      toast[data.result.passed ? "success" : "warning"](
-        `Guardrail ${data.result.score}/100`,
-        {
-          description:
-            data.result.errors[0] ??
-            `${data.result.sourceAgent} → ${data.result.targetAgent}`,
-        },
-      );
+      // Only toast if guardrail failed to alert the user without spamming passed scores
+      if (!data.result.passed) {
+        toast.warning(
+          `Guardrail Retry (${data.result.score}/100)`,
+          {
+            description:
+              data.result.errors[0] ??
+              `${data.result.sourceAgent} → ${data.result.targetAgent}`,
+          },
+        );
+      }
       return;
     }
     if (event === "dead_loop") {

@@ -349,7 +349,7 @@ export function AgentChatMatrix({
                 </div>
               </div>
             )}
-            {messages.filter((message) => !message.handoffFrom).map((message) => (
+            {messages.map((message) => (
               <MessageBubble
                 key={message.id}
                 message={message}

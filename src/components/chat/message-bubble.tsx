@@ -97,7 +97,7 @@ export function MessageBubble({
 
   const color = message.agentColor ?? "#6fe7dd";
   return (
-    <div className="flex w-full min-w-0 max-w-full gap-2.5">
+    <div className={cn("flex w-full min-w-0 max-w-full gap-2.5", message.handoffFrom && "pl-3 border-l-2 border-factory-cyan/40 ml-1.5")}>
       <div className="shrink-0"><AgentAvatar name={message.agentName ?? "Agent"} color={color} size="md" /></div>
       <div className="min-w-0 max-w-full flex-1">
         <div className="mb-1 flex flex-wrap items-center gap-2">

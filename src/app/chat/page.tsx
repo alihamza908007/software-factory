@@ -61,6 +61,7 @@ export default function ChatPage() {
   const [autonomous, setAutonomous] = useState(false);
   const [projectId, setProjectId] = useState("");
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [showAllHandoffs, setShowAllHandoffs] = useState(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const {
@@ -164,8 +165,8 @@ export default function ChatPage() {
     [meshEvents, threadId],
   );
   const visibleMessages = useMemo(
-    () => messages.filter((message) => !message.handoffFrom),
-    [messages],
+    () => (showAllHandoffs ? messages : messages.filter((message) => !message.handoffFrom)),
+    [messages, showAllHandoffs],
   );
 
   return (
@@ -274,6 +275,22 @@ export default function ChatPage() {
                 <Badge variant="info" className="hidden sm:inline-flex">
                   <CornerDownRight className="h-2.5 w-2.5" /> {handoff}
                 </Badge>
+              )}
+              {messages.some((m) => m.handoffFrom) && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllHandoffs((prev) => !prev)}
+                  className={cn(
+                    "hidden items-center gap-1 rounded px-2 py-0.5 font-mono text-[9px] border transition-colors sm:inline-flex",
+                    showAllHandoffs
+                      ? "border-factory-cyan/40 bg-factory-cyan/10 text-factory-cyan"
+                      : "border-border/70 text-muted-foreground hover:text-foreground"
+                  )}
+                  title="Toggle display of autonomous downstream handoff responses"
+                >
+                  <Waypoints className="h-2.5 w-2.5" />
+                  {showAllHandoffs ? `All turns (${messages.length})` : `Direct only (${messages.filter((m) => !m.handoffFrom).length})`}
+                </button>
               )}
             </div>
             <div className="flex items-center gap-2">

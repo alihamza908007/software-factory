@@ -49,6 +49,8 @@ export interface Agent {
   description: string;
   /** Optional explicit mesh routing tags; older persisted agents infer these from role/profile text. */
   capabilities?: string[];
+  /** Optional agent skill slugs (hot-loadable from the skill registry). */
+  skills?: string[];
   systemPrompt: string;
   modelKey: string;
   fallbackModelKey?: string;

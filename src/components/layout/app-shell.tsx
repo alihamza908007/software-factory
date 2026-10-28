@@ -134,10 +134,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       if (knownResponseEvents.current.has(event.id)) continue;
       knownResponseEvents.current.add(event.id);
       if (event.type !== "TASK_CONTRACT" || event.title !== "Agent response delivered") continue;
+      // Suppress toast if the user is already actively watching the Chat Matrix
+      if (pathname === "/chat") continue;
       const excerpt = event.message.replace(/\s+/g, " ").trim();
       toast.message(`${event.source} responded`, {
         description: excerpt.length > 220 ? `${excerpt.slice(0, 217)}…` : excerpt,
-        duration: 8_000,
+        duration: 5_000,
       });
     }
     if (knownResponseEvents.current.size > 600) {

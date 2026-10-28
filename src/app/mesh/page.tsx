@@ -99,9 +99,20 @@ interface NegotiationSummary {
   completedAt?: number;
 }
 
-type WireFilter = "all" | "alerts" | "validation" | "automation" | "handoff";
+type WireFilter = "useful" | "all" | "alerts" | "validation" | "automation" | "handoff";
+
+const NOISE_WIRE_TYPES = new Set<MeshEvent["type"]>([
+  "VALIDATION_STARTED",
+  "AGENT_STATUS",
+  "SCHEMA_UPDATED",
+  "AUTOMATION_STARTED",
+  "CANVAS_RUN_STARTED",
+  "NEGOTIATION_MESSAGE",
+  "TERMINAL_OUTPUT",
+]);
 
 function eventMatchesFilter(event: MeshEvent, filter: WireFilter): boolean {
+  if (filter === "useful") return !NOISE_WIRE_TYPES.has(event.type);
   if (filter === "all") return true;
   if (filter === "alerts") return event.severity === "error" || Boolean(event.requiresOverride);
   if (filter === "validation") return event.type.startsWith("VALIDATION") || event.type === "SECURITY_WARNING";
@@ -703,7 +714,7 @@ export default function MeshPage() {
   const [scanning, setScanning] = useState(false);
   const [checkingRuntime, setCheckingRuntime] = useState(false);
   const [projectId, setProjectId] = useState("");
-  const [wireFilter, setWireFilter] = useState<WireFilter>("all");
+  const [wireFilter, setWireFilter] = useState<WireFilter>("useful");
   const [wireQuery, setWireQuery] = useState("");
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
 
@@ -718,6 +729,16 @@ export default function MeshPage() {
   }).length;
   const alerts = meshEvents.filter(
     (event) => event.requiresOverride && !overriddenEventIds.includes(event.id),
+  ).length;
+  const completedCycles = meshEvents.filter(
+    (event) =>
+      (event.type === "TASK_CONTRACT" && event.title === "Agent response delivered") ||
+      event.type === "POST_FLIGHT_PASSED" ||
+      event.type === "CANVAS_RUN_COMPLETED" ||
+      event.type === "AUTOMATION_PASSED",
+  ).length;
+  const errorCycles = meshEvents.filter(
+    (event) => event.severity === "error" || (event.requiresOverride && !overriddenEventIds.includes(event.id)),
   ).length;
   const constraints = meshMemory.reduce((sum, memory) => sum + memory.constraints.length, 0);
   const wire = useMemo(() => {
@@ -947,6 +968,31 @@ export default function MeshPage() {
           <section className="panel p-3">
             <div className="flex items-center justify-between border-b border-border/60 px-3 py-2.5">
               <span className="eyebrow flex items-center gap-1.5">
+                <Activity className="h-3 w-3 text-factory-cyan" />
+                Cycle status
+              </span>
+              <Badge variant={errorCycles ? "warning" : "success"}>
+                {errorCycles ? `${errorCycles} errors` : "healthy"}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-3 gap-2 p-2">
+              <div className="rounded-md border border-border/60 bg-secondary/50 p-2 text-center">
+                <div className="font-mono text-lg font-semibold text-factory-amber">{activeAgents}</div>
+                <div className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">In progress</div>
+              </div>
+              <div className="rounded-md border border-border/60 bg-secondary/50 p-2 text-center">
+                <div className="font-mono text-lg font-semibold text-factory-lime">{completedCycles}</div>
+                <div className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">Completed</div>
+              </div>
+              <div className="rounded-md border border-border/60 bg-secondary/50 p-2 text-center">
+                <div className="font-mono text-lg font-semibold text-red-400">{errorCycles}</div>
+                <div className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">Errors</div>
+              </div>
+            </div>
+          </section>
+          <section className="panel p-3">
+            <div className="flex items-center justify-between border-b border-border/60 px-3 py-2.5">
+              <span className="eyebrow flex items-center gap-1.5">
                 <MessagesSquare className="h-3 w-3 text-factory-cyan" />
                 Recent agent activity
               </span>
@@ -997,6 +1043,7 @@ export default function MeshPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="useful">Useful</SelectItem>
                   <SelectItem value="all">All events</SelectItem>
                   <SelectItem value="alerts">Alerts</SelectItem>
                   <SelectItem value="validation">Validation</SelectItem>

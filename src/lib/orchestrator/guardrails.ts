@@ -133,7 +133,12 @@ export function classifyHandoff(input: HandoffValidationInput): GuardrailResult 
   const safeBlocks = blocks.filter(
     (file) => !file.path.startsWith("/") && !file.path.includes("..") && !/^[a-zA-Z]:/.test(file.path),
   );
-  const needsFiles = /developer|engineer|qa|test/i.test(targetRole) || input.stage === "implementation";
+  const isExplanatory = /explain|why|how|analyze|diagnose|review|clarify|question|inspect|status|summary|plan|architecture|spec/i.test(
+    `${input.originalRequest ?? ""} ${payload}`,
+  );
+  const needsFiles =
+    (!isExplanatory && /developer|engineer|qa|test/i.test(targetRole)) ||
+    input.stage === "implementation";
   const fileScore = needsFiles
     ? safeBlocks.length >= 2
       ? 25
@@ -142,7 +147,9 @@ export function classifyHandoff(input: HandoffValidationInput): GuardrailResult 
         : 0
     : fences > 0
       ? 20
-      : 10;
+      : safeBlocks.length > 0
+        ? 25
+        : 15;
   pushCheck(checks, {
     id: "artifacts",
     label: needsFiles ? "Executable file blocks" : "Actionable artifacts",

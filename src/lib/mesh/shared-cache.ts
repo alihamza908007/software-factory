@@ -102,9 +102,9 @@ class SharedCache {
     store.entries.set(scoped, entry as SharedCacheEntry);
     store.writes += 1;
     while (store.entries.size > MAX_ENTRIES) {
-      const oldest = Array.from(store.entries.values()).sort((a, b) => a.storedAt - b.storedAt)[0];
-      if (!oldest) break;
-      store.entries.delete(oldest.key);
+      const oldestKey = store.entries.keys().next().value;
+      if (!oldestKey) break;
+      store.entries.delete(oldestKey);
       store.evictions += 1;
     }
     return data;

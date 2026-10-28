@@ -97,21 +97,51 @@ export async function getDb(): Promise<FactoryDb> {
 }
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
-let persistPromise: Promise<void> | null = null;
+let isPersisting = false;
+let hasPendingChanges = false;
+let pendingDb: FactoryDb | null = null;
+let persistResolvers: Array<() => void> = [];
+
+async function triggerPersist(): Promise<void> {
+  if (isPersisting) {
+    hasPendingChanges = true;
+    return;
+  }
+  isPersisting = true;
+  hasPendingChanges = false;
+  const targetDb = pendingDb ?? globalStore.__factoryDb;
+  const currentResolvers = persistResolvers;
+  persistResolvers = [];
+  try {
+    if (targetDb) {
+      await persist(targetDb);
+    }
+  } catch (error) {
+    console.error("Failed to persist factory DB:", error);
+  } finally {
+    isPersisting = false;
+    currentResolvers.forEach((res) => {
+      try {
+        res();
+      } catch {}
+    });
+    if (hasPendingChanges) {
+      void triggerPersist();
+    }
+  }
+}
 
 function schedulePersist(db: FactoryDb): Promise<void> {
-  if (persistPromise) return persistPromise;
-  persistPromise = new Promise<void>((resolve) => {
-    persistTimer = setTimeout(() => {
-      persistTimer = null;
-      const promise = persistPromise;
-      persistPromise = null;
-      void persist(db)
-        .then(() => resolve())
-        .catch(() => resolve());
-    }, 100);
+  pendingDb = db;
+  return new Promise<void>((resolve) => {
+    persistResolvers.push(resolve);
+    if (!persistTimer) {
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        void triggerPersist();
+      }, 50);
+    }
   });
-  return persistPromise;
 }
 
 export async function updateDb<T>(mutator: (db: FactoryDb) => T | Promise<T>): Promise<T> {

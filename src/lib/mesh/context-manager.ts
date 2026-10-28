@@ -8,18 +8,50 @@ export interface CompactAgentContext {
   text: string;
 }
 
-/** Keep cross-agent handoffs small while preserving file locations and concrete decisions. */
+/** Keep cross-agent handoffs small while preserving code structure, file locations and concrete decisions. */
 export function compactAgentContext(input: string, maxChars = 2_400): CompactAgentContext {
-  const artifacts = parseFileBlocks(input).map((file) => file.path);
-  const withoutCode = input.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ");
+  const trimmed = input.trim();
+  const fileBlocks = parseFileBlocks(trimmed);
+  const artifacts = fileBlocks.map((file) => file.path);
+
+  // If already within budget, keep verbatim so code and instructions remain fully intact
+  if (trimmed.length <= maxChars) {
+    const withoutCode = trimmed.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ");
+    const summary = withoutCode.replace(/\s+/g, " ").trim().slice(0, 500) || "Agent completed work.";
+    return {
+      summary,
+      artifactPointers: artifacts.slice(0, 20),
+      text: trimmed,
+    };
+  }
+
+  // Preserve leading conversational explanation
+  const withoutCode = trimmed.replace(/```[\s\S]*?```/g, " ").replace(/`[^`]*`/g, " ");
   const sentences = withoutCode
     .split(/(?<=[.!?])\s+|\n+/)
     .map((item) => item.replace(/\s+/g, " ").trim())
-    .filter((item) => item.length > 24)
-    .slice(0, 3);
-  const summary = (sentences.join(" ") || "Agent completed work; inspect the referenced artifacts for details.").slice(0, 900);
+    .filter((item) => item.length > 15)
+    .slice(0, 4);
+  const summary = (sentences.join(" ") || "Agent completed work; inspect the referenced artifacts for details.").slice(0, 800);
+
+  // For code blocks, retain declarations / signatures instead of complete erasure
+  const codeSignatures: string[] = [];
+  for (const block of fileBlocks.slice(0, 5)) {
+    const lines = block.content.split("\n");
+    const sigLines = lines
+      .filter((l) => /^(export|import|function|class|interface|type|const|def|class\s|async)\b/.test(l.trim()))
+      .slice(0, 6);
+    if (sigLines.length > 0) {
+      codeSignatures.push(`\`${block.path}\` signatures:\n${sigLines.join("\n")}`);
+    } else {
+      codeSignatures.push(`\`${block.path}\` (${lines.length} lines)`);
+    }
+  }
+
   const pointerText = artifacts.length ? `Artifact pointers: ${artifacts.slice(0, 20).join(", ")}` : "Artifact pointers: none";
-  const text = `${summary}\n${pointerText}`.slice(0, maxChars);
+  const signatureSection = codeSignatures.length ? `\n\nCode structure:\n${codeSignatures.join("\n\n")}` : "";
+  const text = `${summary}\n${pointerText}${signatureSection}`.slice(0, maxChars);
+
   return { summary, artifactPointers: artifacts.slice(0, 20), text };
 }
 
@@ -75,12 +107,26 @@ export async function resolveHandoffContext(
 
 export function compactConversationHistory<T extends { role: "user" | "assistant"; content: string; agentName?: string }>(
   history: T[],
-  maxMessages = 12,
+  maxMessages = 14,
 ): Array<T | (T & { content: string })> {
   const recent = history.slice(-maxMessages);
-  return recent.map((message) => message.role === "assistant"
-    ? { ...message, content: compactAgentContext(message.content, 1_500).text }
-    : message);
+  const total = recent.length;
+  return recent.map((message, index) => {
+    if (message.role !== "assistant") return message;
+    // Preserve the last 2 assistant messages in full detail (up to 4k chars) so follow-ups and code discussions have full context
+    const isRecent = index >= total - 3;
+    if (isRecent) {
+      return {
+        ...message,
+        content: message.content.slice(0, 4_000),
+      };
+    }
+    // Older assistant messages get smart context compaction with code signatures preserved
+    return {
+      ...message,
+      content: compactAgentContext(message.content, 1_500).text,
+    };
+  });
 }
 
 export function tokenBudgetForTask(text: string): number {

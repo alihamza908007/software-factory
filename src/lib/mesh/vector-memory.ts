@@ -28,34 +28,62 @@ const DEFAULT_CONFIG: VectorMemoryConfig = {
   topK: 3,
 };
 
-let db: DatabaseSync | null = null;
+const instances = new Map<string, DatabaseSync>();
+let activeWorkspaceRoot: string = "";
 let currentConfig: VectorMemoryConfig = { ...DEFAULT_CONFIG };
 
+export function sanitizeFtsQuery(raw: string): string {
+  // Strip FTS5 operators and punctuation that trigger syntax errors, preserving letters and numbers
+  const cleaned = raw.replace(/[^\p{L}\p{N}_\s]/gu, " ").trim();
+  const tokens = cleaned.split(/\s+/).filter((t) => t.length > 0);
+  if (!tokens.length) return '""';
+  // Use quoted prefix matches joined with OR
+  return tokens.slice(0, 8).map((token) => `"${token}"*`).join(" OR ");
+}
+
 export function initVectorMemory(workspaceRoot: string): VectorMemoryConfig {
-  const dbPath = path.join(workspaceRoot, ".factory", "vector-memory.db");
+  const normalized = path.resolve(workspaceRoot);
+  activeWorkspaceRoot = normalized;
+  const dbPath = path.join(normalized, ".factory", "vector-memory.db");
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   currentConfig = { ...DEFAULT_CONFIG, dbPath };
-  db = new DatabaseSync(dbPath);
-  db.exec(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS code_fts USING fts5(
-      path UNINDEXED,
-      content,
-      tokenize='porter unicode61'
-    );
-  `);
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS file_meta (
-      path TEXT PRIMARY KEY,
-      mtime INTEGER,
-      size INTEGER
-    );
-  `);
+
+  let dbInstance = instances.get(normalized);
+  if (!dbInstance) {
+    dbInstance = new DatabaseSync(dbPath);
+    dbInstance.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS code_fts USING fts5(
+        path UNINDEXED,
+        content,
+        tokenize='porter unicode61'
+      );
+    `);
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS file_meta (
+        path TEXT PRIMARY KEY,
+        mtime INTEGER,
+        size INTEGER
+      );
+    `);
+    instances.set(normalized, dbInstance);
+  }
   return currentConfig;
 }
 
-export function indexFile(filePath: string, content: string, mtime: number): void {
-  if (!db) throw new Error("Vector memory not initialized. Call initVectorMemory first.");
+function getActiveDb(workspaceRoot?: string): DatabaseSync {
+  const root = workspaceRoot ? path.resolve(workspaceRoot) : activeWorkspaceRoot;
+  let target = instances.get(root);
+  if (!target && root) {
+    initVectorMemory(root);
+    target = instances.get(root);
+  }
+  if (!target) throw new Error("Vector memory not initialized. Call initVectorMemory first.");
+  return target;
+}
+
+export function indexFile(filePath: string, content: string, mtime: number, workspaceRoot?: string): void {
+  const db = getActiveDb(workspaceRoot);
   const existing = db.prepare("SELECT mtime FROM file_meta WHERE path = ?").get(filePath) as { mtime: number } | undefined;
   if (existing && existing.mtime === mtime) return; // unchanged
   db.prepare("DELETE FROM code_fts WHERE path = ?").run(filePath);
@@ -65,39 +93,82 @@ export function indexFile(filePath: string, content: string, mtime: number): voi
   db.prepare("INSERT OR REPLACE INTO file_meta (path, mtime, size) VALUES (?, ?, ?)").run(filePath, mtime, content.length);
 }
 
-export function searchWorkspace(query: string, topK?: number): CodeSnippet[] {
-  if (!db) throw new Error("Vector memory not initialized. Call initVectorMemory first.");
+export function searchWorkspace(query: string, topK?: number, workspaceRoot?: string): CodeSnippet[] {
+  let db: DatabaseSync;
+  try {
+    db = getActiveDb(workspaceRoot);
+  } catch {
+    return [];
+  }
   const k = topK ?? currentConfig.topK;
-  const stmt = db.prepare(
-    `SELECT path, snippet(code_fts, 1, '', '', '…', 12) AS content, rank
-     FROM code_fts WHERE code_fts MATCH ? ORDER BY rank LIMIT ?`,
-  );
-  const rows = stmt.all(query, k) as Array<{ path: string; content: string; rank: number }>;
-  return rows.map((r) => ({
-    path: r.path,
-    content: (r.content ?? "").slice(0, currentConfig.maxSnippetChars),
-    rank: r.rank,
-  }));
-}
+  const sanitized = sanitizeFtsQuery(query);
 
-export function removeFile(filePath: string): void {
-  if (!db) return;
-  db.prepare("DELETE FROM code_fts WHERE path = ?").run(filePath);
-  db.prepare("DELETE FROM file_meta WHERE path = ?").run(filePath);
-}
-
-export function closeVectorMemory(): void {
-  if (db) {
-    db.close();
-    db = null;
+  try {
+    const stmt = db.prepare(
+      `SELECT path, snippet(code_fts, 1, '', '', '…', 12) AS content, rank
+       FROM code_fts WHERE code_fts MATCH ? ORDER BY rank LIMIT ?`,
+    );
+    const rows = stmt.all(sanitized, k) as Array<{ path: string; content: string; rank: number }>;
+    return rows.map((r) => ({
+      path: r.path,
+      content: (r.content ?? "").slice(0, currentConfig.maxSnippetChars),
+      rank: r.rank,
+    }));
+  } catch (err) {
+    // Fallback: If sanitized FTS query still fails, try plain word search
+    try {
+      const firstWord = query.replace(/[^\w]/g, " ").trim().split(/\s+/)[0];
+      if (!firstWord) return [];
+      const fallbackStmt = db.prepare(
+        `SELECT path, snippet(code_fts, 1, '', '', '…', 12) AS content, rank
+         FROM code_fts WHERE code_fts MATCH ? ORDER BY rank LIMIT ?`,
+      );
+      const rows = fallbackStmt.all(`"${firstWord}"*`, k) as Array<{ path: string; content: string; rank: number }>;
+      return rows.map((r) => ({
+        path: r.path,
+        content: (r.content ?? "").slice(0, currentConfig.maxSnippetChars),
+        rank: r.rank,
+      }));
+    } catch {
+      return [];
+    }
   }
 }
 
-export function getVectorMemoryStats(): { files: number; chunks: number } {
-  if (!db) return { files: 0, chunks: 0 };
-  const files = (db.prepare("SELECT COUNT(*) AS c FROM file_meta").get() as { c: number }).c;
-  const chunks = (db.prepare("SELECT COUNT(*) AS c FROM code_fts").get() as { c: number }).c;
-  return { files, chunks };
+export function removeFile(filePath: string, workspaceRoot?: string): void {
+  try {
+    const db = getActiveDb(workspaceRoot);
+    db.prepare("DELETE FROM code_fts WHERE path = ?").run(filePath);
+    db.prepare("DELETE FROM file_meta WHERE path = ?").run(filePath);
+  } catch {}
+}
+
+export function closeVectorMemory(workspaceRoot?: string): void {
+  if (workspaceRoot) {
+    const root = path.resolve(workspaceRoot);
+    const instance = instances.get(root);
+    if (instance) {
+      instance.close();
+      instances.delete(root);
+    }
+  } else {
+    for (const [key, instance] of instances) {
+      instance.close();
+      instances.delete(key);
+    }
+    activeWorkspaceRoot = "";
+  }
+}
+
+export function getVectorMemoryStats(workspaceRoot?: string): { files: number; chunks: number } {
+  try {
+    const db = getActiveDb(workspaceRoot);
+    const files = (db.prepare("SELECT COUNT(*) AS c FROM file_meta").get() as { c: number }).c;
+    const chunks = (db.prepare("SELECT COUNT(*) AS c FROM code_fts").get() as { c: number }).c;
+    return { files, chunks };
+  } catch {
+    return { files: 0, chunks: 0 };
+  }
 }
 
 function chunkContent(content: string, maxChars: number): string[] {
