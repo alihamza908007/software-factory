@@ -14,6 +14,10 @@ export async function GET(
   const run = await getRun(id);
   if (!run) return new Response("Run not found", { status: 404 });
 
+  const url = new URL(request.url);
+  const resumeFrom = Number(
+    url.searchParams.get("since") ?? request.headers.get("last-event-id") ?? 0,
+  );
   const encoder = new TextEncoder();
   let closed = false;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -21,20 +25,22 @@ export async function GET(
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const send = (event: string, data: unknown) => {
+      const send = (event: string, data: unknown, id?: number) => {
         if (closed) return;
         try {
-          controller.enqueue(sseChunk(event, data));
+          controller.enqueue(sseChunk(event, data, id));
         } catch {
           closed = true;
         }
       };
 
-      const backlog = runEvents.backlog(id);
+      const backlog = resumeFrom > 0
+        ? runEvents.since(id, resumeFrom)
+        : runEvents.backlog(id);
       if (backlog.length) {
-        for (const event of backlog) send(event.type, event);
+        for (const item of backlog) send(item.event.type, item.event, item.sequence);
       } else {
-        send("snapshot", { type: "snapshot", run });
+        send("snapshot", { type: "snapshot", run }, runEvents.sequenceNumber(id));
       }
 
       if (["passed", "failed", "cancelled", "interrupted", "recoverable_paused"].includes(run.status)) {
@@ -51,8 +57,8 @@ export async function GET(
         return;
       }
 
-      unsubscribe = runEvents.subscribe(id, (event) => {
-        send(event.type, event);
+      unsubscribe = runEvents.subscribe(id, (event, sequence) => {
+        send(event.type, event, sequence);
         if (event.type === "done") {
           setTimeout(() => {
             if (!closed) {

@@ -71,11 +71,12 @@ export async function runChatTurn(params: {
 }): Promise<void> {
   const { body, request, controller } = params;
       let closed = false;
+      let sequence = 0;
       const pendingValidation: Promise<void>[] = [];
       const send = (event: string, data: unknown) => {
         if (closed) return;
         try {
-          controller.enqueue(sseChunk(event, data));
+          controller.enqueue(sseChunk(event, data, ++sequence));
         } catch {
           closed = true;
         }
@@ -263,23 +264,29 @@ export async function runChatTurn(params: {
           requiredCapabilities?: string[];
           handoff?: { from: string; output: string; correction?: string; score?: number };
           contract?: ReturnType<typeof createTaskContract>;
+          originId?: string;
         }> = targets.map((agent) => ({
           agent,
+          originId: agent.id,
           depth: 0,
           objective: objectiveOverrides.get(agent.id),
           requiredCapabilities: capabilityOverrides.get(agent.id),
         }));
         const maxDepth = settings.maxHandoffDepth;
         const autoHandoff = body.autoHandoff ?? settings.autoHandoff;
-        let frozen = false;
+        const frozenOrigins = new Set<string>();
 
-        while (queue.length && !frozen) {
+        while (queue.length) {
           if (request.signal.aborted) throw new DOMException("Aborted", "AbortError");
           // Independent agents at the same handoff depth run concurrently;
           // downstream work joins the next wave after all current outputs land.
           const wave = queue.splice(0).filter(
-            (item) => item.depth <= maxDepth && (visited.get(item.agent.id) ?? 0) < visitCap(item.agent.id),
+            (item) =>
+              item.depth <= maxDepth &&
+              (visited.get(item.agent.id) ?? 0) < visitCap(item.agent.id) &&
+              !frozenOrigins.has(item.originId ?? item.agent.id),
           );
+          if (!wave.length && queue.length) break;
           for (const item of wave) visited.set(item.agent.id, (visited.get(item.agent.id) ?? 0) + 1);
 
           await Promise.all(
@@ -876,7 +883,7 @@ export async function runChatTurn(params: {
                   const { nextAgent, verdict } = validation;
                       send("guardrail", { result: verdict, from: item.agent.name, to: nextAgent.name });
                       if (verdict.deadLoop.detected) {
-                        frozen = true;
+                        frozenOrigins.add(item.originId ?? item.agent.id);
                         const resolutionPath = "Break the repeated handoff cycle by assigning one concrete artifact to the best-qualified agent, then resume from that artifact instead of repeating the same transition.";
                         publishAgentEnvelope({
                           from: `@${item.agent.handle.replace(/^@/, "")}`,
@@ -991,6 +998,7 @@ export async function runChatTurn(params: {
                       queue.push({
                         agent: nextAgent,
                         depth: item.depth + 1,
+                        originId: item.originId ?? item.agent.id,
                         handoff: {
                           from: item.agent.name,
                           output: responseText,

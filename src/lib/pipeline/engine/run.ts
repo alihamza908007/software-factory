@@ -21,7 +21,7 @@ import { negotiateTaskOwnership } from "@/lib/mesh/negotiation";
 
 import { executeCanvasTopology, type DagResumeOptions } from "@/lib/pipeline/scheduler";
 
-import { activeRuns, resolveAgents, publishSnapshot, logPhase, guardHandoff, setPhase, beginPhase, finishPhase, addArtifact, publishArtifactEvent, assertActive } from "./shared";
+import { activeRuns, resolveAgents, publishSnapshot, logPhase, guardHandoff, setPhase, beginPhase, finishPhase, saveCheckpoint, addArtifact, publishArtifactEvent, assertActive } from "./shared";
 
 import { applyNodeManifest, commitPhase, generateFiles, performDependencyHandshake } from "./generation";
 
@@ -345,8 +345,14 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       return;
     }
 
-    let spec = "";
+    const checkpoints = run.checkpoints ?? {};
+    const restoredSpec =
+      checkpoints.requirements?.spec ?? checkpoints.architecture?.spec ?? checkpoints.implementation?.spec;
+    let spec = restoredSpec ?? "";
     let specTokens = 0;
+    if (checkpoints.requirements?.spec) {
+      await logPhase(runId, "requirements", "info", "Restoring the specification from the saved phase checkpoint.");
+    }
     if (phaseStartIndex <= 0) {
     // Phase 1 — Requirements
     const pm = agents.requirements;
@@ -433,12 +439,13 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       "requirements",
     );
     await finishPhase(runId, "requirements", "passed");
+    await saveCheckpoint(runId, "requirements", { at: Date.now(), spec });
     assertActive(runId);
     } else {
-      spec = await fs.readFile(path.join(root, "docs/SPEC.md"), "utf8").catch(() => project.description);
+      spec = restoredSpec ?? await fs.readFile(path.join(root, "docs/SPEC.md"), "utf8").catch(() => project.description);
     }
 
-    let architecture = "";
+    let architecture = checkpoints.architecture?.architecture ?? checkpoints.implementation?.architecture ?? "";
     let architectureTokens = 0;
     if (phaseStartIndex <= 1) {
     // Phase 2 — Architecture
@@ -526,9 +533,12 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       "architecture",
     );
     await finishPhase(runId, "architecture", "passed");
+    await saveCheckpoint(runId, "architecture", { at: Date.now(), spec, architecture });
     assertActive(runId);
     } else {
-      architecture = await fs.readFile(path.join(root, "docs/ARCHITECTURE.md"), "utf8").catch(() => "");
+      architecture = checkpoints.architecture?.architecture
+        ?? checkpoints.implementation?.architecture
+        ?? await fs.readFile(path.join(root, "docs/ARCHITECTURE.md"), "utf8").catch(() => "");
     }
 
     if (phaseStartIndex <= 2) {
@@ -536,20 +546,39 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
     const developer = agents.implementation;
     if (!developer) throw new Error("No developer agent is configured.");
     await beginPhase(runId, "implementation", developer.id);
-    const implFiles = await processImplementation(
-      runId,
-      project,
-      root,
-      agents,
-      spec,
-      architecture,
-      run.options.allowConcurrency,
-      controller.signal,
-      taskPlan,
-      healLimit,
-    );
+    const checkpointFiles = phaseStartIndex === 2 ? checkpoints.implementation?.files : undefined;
+    let implFiles: ParsedFile[];
+    if (checkpointFiles?.length) {
+      const restored = await applyFileBlocks(root, checkpointFiles);
+      implFiles = checkpointFiles;
+      await logPhase(
+        runId,
+        "implementation",
+        "info",
+        `Restored ${restored.written.length} file(s) from the saved implementation checkpoint instead of regenerating them.`,
+      );
+    } else {
+      implFiles = await processImplementation(
+        runId,
+        project,
+        root,
+        agents,
+        spec,
+        architecture,
+        run.options.allowConcurrency,
+        controller.signal,
+        taskPlan,
+        healLimit,
+      );
+    }
     await addArtifact(runId, "docs/SPEC.md");
     await finishPhase(runId, "implementation", "passed");
+    await saveCheckpoint(runId, "implementation", {
+      at: Date.now(),
+      spec,
+      architecture,
+      files: implFiles.map((file) => ({ path: file.path, content: file.content })),
+    });
     await logPhase(
       runId,
       "implementation",
@@ -559,11 +588,15 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
     assertActive(runId);
     }
 
-    let verification = {
+    const checkpointVerification = checkpoints.testing?.verification;
+    let verification = checkpointVerification ?? {
       results: (await getRun(runId))?.phases.find((phase) => phase.id === "testing")?.commands ?? [],
       failed: false,
     };
-    if (phaseStartIndex <= 3) {
+    if (checkpointVerification && phaseStartIndex === 3) {
+      await logPhase(runId, "testing", "info", "Restoring verification results from the saved testing checkpoint.");
+    }
+    if (phaseStartIndex <= 3 && !checkpointVerification) {
     // Phase 4 — Testing & Self-Healing
     await beginPhase(runId, "testing", agents.testing?.id);
     verification = await processTesting(
@@ -578,6 +611,11 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
     );
     assertActive(runId);
     }
+
+    await saveCheckpoint(runId, "testing", {
+      at: Date.now(),
+      verification: { results: verification.results, failed: verification.failed },
+    });
 
     // Phase 5 — Deployment & CI
     await beginPhase(runId, "deployment", agents.deployment?.id);

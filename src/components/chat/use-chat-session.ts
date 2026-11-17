@@ -73,6 +73,7 @@ export function useChatSession() {
   const [streaming, setStreaming] = useState(false);
   const [handoff, setHandoff] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const lastChatEventId = useRef(0);
   const mountedRef = useRef(true);
 
   useEffect(() => {
@@ -363,6 +364,7 @@ export function useChatSession() {
     if (!message || streaming) return false;
     setStreaming(true);
     setHandoff(null);
+    lastChatEventId.current = 0;
     const controller = new AbortController();
     abortRef.current = controller;
     let activeThreadId = threadId;
@@ -406,6 +408,12 @@ export function useChatSession() {
             continue;
           }
           const eventName = eventLine.slice(6).trim();
+          const idLine = lines.find((line) => line.startsWith("id:"));
+          if (idLine && eventName !== "ping") {
+            const id = Number(idLine.slice(3).trim());
+            if (Number.isFinite(id) && id <= lastChatEventId.current) continue;
+            if (Number.isFinite(id)) lastChatEventId.current = id;
+          }
           if (eventName === "thread") {
             activeThreadId = (payload as { threadId: string }).threadId;
           }

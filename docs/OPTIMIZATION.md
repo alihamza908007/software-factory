@@ -5,6 +5,17 @@ routing, and the data/state layer). All items from the first audit pass have now
 
 ## Done
 
+### Final architectural pass
+- **Durable phase checkpoints.** Requirements, architecture, implementation files and testing
+  verification are saved on the run. Resume restores the spec/architecture text, replays saved
+  implementation files instead of regenerating them, and reuses verification results.
+- **Ordered, resumable streams.** Run SSE events carry sequence ids; the client reconnects with
+  `Last-Event-ID`/`since` and replays only missed events. Chat SSE events are sequenced and
+  de-duplicated. The two streams remain separate endpoints (full protocol unification is
+  intentionally out of scope).
+- **Branch-scoped dead-loop freezing.** A detected loop now freezes only the offending handoff
+  branch; sibling branches continue.
+
 ### Run / pipeline
 - **Verification reuse.** A per-run cache keyed by a workspace content fingerprint lets
   testing and deployment reuse an earlier passing build/test result when no source file changed.
@@ -41,10 +52,8 @@ routing, and the data/state layer). All items from the first audit pass have now
 
 ## Remaining architectural work
 
-- **Durable phase checkpoints.** Resume still restarts the current phase rather than replaying
-  a saved file bundle / verification result / git commit hash.
-- **Unify chat SSE and the mesh bus** into one ordered, resumable stream with sequence numbers.
-  Transient control frames are now persisted, but replay/resume across a disconnect is still
-  not supported.
-- **Scope dead-loop freezing to the offending branch** instead of aborting the whole wave.
-- **Capability inference** still derives partly from full system prompts, inflating scores.
+- Canvas runs still re-execute the DAG on resume; only the standard five-phase pipeline replays
+  saved phase checkpoints today.
+- A single unified endpoint for chat and mesh events (with server-side replay of chat turns
+  across a full page reload) would require a durable event log, not just sequence ids.
+- Capability inference still derives partly from full system prompts, inflating scores.

@@ -42,6 +42,7 @@ export default function PipelinePage() {
   const [artifactEdit, setArtifactEdit] = useState<{ path: string; phaseId: PhaseId; content: string } | null>(null);
   const [artifactBusy, setArtifactBusy] = useState(false);
   const queryApplied = useRef(false);
+  const lastEventId = useRef(0);
 
   useEffect(() => {
     if (!runs.length) return;
@@ -66,7 +67,7 @@ export default function PipelinePage() {
         return (await res.json()) as { run: Run };
       })
       .then((data) => {
-        if (!cancelled) setRun(data.run);
+        if (!cancelled && lastEventId.current === 0) setRun(data.run);
       })
       .catch((error) => toast.error(String(error)))
       .finally(() => !cancelled && setLoading(false));
@@ -77,8 +78,14 @@ export default function PipelinePage() {
 
   useEffect(() => {
     if (!selectedId) return;
-    const source = new EventSource(`/api/runs/${selectedId}/events`);
+    lastEventId.current = 0;
+    let source: EventSource;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let cancelled = false;
+    const connect = () => {
+    source = new EventSource(`/api/runs/${selectedId}/events?since=${lastEventId.current}`);
     const parse = (event: MessageEvent) => {
+      if (event.lastEventId) lastEventId.current = Number(event.lastEventId) || lastEventId.current;
       try {
         return JSON.parse(event.data);
       } catch {
@@ -195,8 +202,15 @@ export default function PipelinePage() {
     });
     source.onerror = () => {
       source.close();
+      if (!cancelled) retry = setTimeout(connect, 1500);
     };
-    return () => source.close();
+    };
+    connect();
+    return () => {
+      cancelled = true;
+      if (retry) clearTimeout(retry);
+      source?.close();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 

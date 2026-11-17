@@ -196,6 +196,14 @@ export interface RunArtifacts {
   summary?: string;
 }
 
+export interface PhaseCheckpoint {
+  at: number;
+  spec?: string;
+  architecture?: string;
+  files?: Array<{ path: string; content: string }>;
+  verification?: { results: CommandResult[]; failed: boolean };
+}
+
 export interface Run {
   id: string;
   projectId: string;
@@ -214,6 +222,8 @@ export interface Run {
     engine?: "canvas" | "standard";
     pipelineTopology?: CanvasTopology;
   };
+  /** Saved phase outputs used to resume without regenerating completed work. */
+  checkpoints?: Partial<Record<PhaseId, PhaseCheckpoint>>;
   error?: string;
   startedAt?: number;
   completedAt?: number;

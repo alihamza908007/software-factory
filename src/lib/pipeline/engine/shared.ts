@@ -5,7 +5,7 @@ import { PHASES } from "@/lib/core/constants";
 import { runEvents } from "@/lib/core/events";
 
 import { DeadLoopException, validateAgentHandoff } from "@/lib/pipeline/guardrails";
-import type { Agent, GuardrailResult, PhaseId, Run } from "@/lib/core/types";
+import type { Agent, GuardrailResult, PhaseCheckpoint, PhaseId, Run } from "@/lib/core/types";
 import { uid } from "@/lib/core/utils";
 
 import { learnFromFailure } from "@/lib/mesh/agent-memory";
@@ -158,6 +158,16 @@ export async function beginPhase(runId: string, phaseId: PhaseId, agentId?: stri
     }
   });
   await publishSnapshot(runId);
+}
+
+export async function saveCheckpoint(
+  runId: string,
+  phaseId: PhaseId,
+  checkpoint: PhaseCheckpoint,
+) {
+  await updateRun(runId, (run) => {
+    run.checkpoints = { ...run.checkpoints, [phaseId]: checkpoint };
+  });
 }
 
 export async function finishPhase(
