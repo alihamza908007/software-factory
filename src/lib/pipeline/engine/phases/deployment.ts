@@ -145,7 +145,14 @@ export async function processDeployment(
     throw new Error(`Deployment build verification failed.\nresolutionPath: ${resolutionPath}\n${output.slice(-4_000)}`);
   }
 
-  if (settings.githubToken && settings.githubOwner && settings.githubRepo) {
+  const runConfig = await getRun(runId);
+  const shouldPush = Boolean(
+    runConfig?.options.pushToGitHub &&
+      settings.githubToken &&
+      settings.githubOwner &&
+      settings.githubRepo,
+  );
+  if (shouldPush) {
     await logPhase(
       runId,
       "deployment",

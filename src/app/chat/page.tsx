@@ -352,7 +352,7 @@ export default function ChatPage() {
                   ))}
                 </div>
                 <div className="mt-5 flex flex-wrap justify-center gap-1.5">
-                  {agents.slice(0, 5).map((agent) => (
+                  {agents.filter((agent) => agent.enabled).slice(0, 5).map((agent) => (
                     <button
                       key={agent.id}
                       onClick={() => insertMention(agent)}

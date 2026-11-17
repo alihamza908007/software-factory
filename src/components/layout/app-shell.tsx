@@ -80,6 +80,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     fetchModels,
     runs,
     connectMesh,
+    disconnectMesh,
     meshEvents,
     meshConnected,
   } = useFactory();
@@ -92,7 +93,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       void fetchHealth();
       void fetchRuns();
     }, 7000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      disconnectMesh();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

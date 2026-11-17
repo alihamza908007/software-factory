@@ -337,7 +337,7 @@ export function AgentChatMatrix({
                   dialogue tree.
                 </p>
                 <div className="mt-3 flex flex-wrap justify-center gap-1.5">
-                  {agents.slice(0, 5).map((agent) => (
+                  {agents.filter((agent) => agent.enabled).slice(0, 5).map((agent) => (
                     <button
                       key={agent.id}
                       onClick={() => setInput((value) => `${value}${value ? " " : ""}@${agent.handle} `)}

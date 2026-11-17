@@ -112,7 +112,6 @@ export function PipelineCanvas() {
     activePipelineTopology,
     canvasValidation,
     canvasLoading,
-    fetchCanvas,
     saveCanvasTopology,
     deactivateCanvasTopology,
     canvasLogs,
@@ -133,10 +132,6 @@ export function PipelineCanvas() {
   const initialized = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    void fetchCanvas();
-  }, [fetchCanvas]);
 
   useEffect(() => {
     if (!projectId && projects[0]) setProjectId(projects[0].id);

@@ -117,15 +117,26 @@ export default function AgentsPage() {
     };
   }, [perfAgent]);
 
+  const modelByKey = useMemo(() => new Map(models.map((model) => [model.key, model])), [models]);
+  const metricsByAgent = useMemo(() => {
+    const grouped = new Map<string, AgentMetric[]>();
+    for (const metric of metrics) {
+      const list = grouped.get(metric.agentId);
+      if (list) list.push(metric);
+      else grouped.set(metric.agentId, [metric]);
+    }
+    return grouped;
+  }, [metrics]);
+
   const filtered = useMemo(
     () =>
       agents.filter((agent) =>
         `${agent.name} ${agent.role} ${agent.handle} ${agent.modelKey}`
           .toLowerCase()
           .includes(query.toLowerCase()) &&
-        (providerFilter === "all" || models.find((model) => model.key === agent.modelKey)?.provider === providerFilter),
+        (providerFilter === "all" || modelByKey.get(agent.modelKey)?.provider === providerFilter),
       ),
-    [agents, models, providerFilter, query],
+    [agents, modelByKey, providerFilter, query],
   );
 
   const localAgents = agents.filter((agent) => agent.modelKey.startsWith("ollama/")).length;
@@ -340,9 +351,9 @@ export default function AgentsPage() {
       {filtered.length ? (
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {filtered.map((agent) => {
-            const recent = metrics.filter((metric) => metric.agentId === agent.id).slice(0, 14);
+            const recent = (metricsByAgent.get(agent.id) ?? []).slice(0, 14);
             const latest = recent[0];
-            const model = models.find((item) => item.key === agent.modelKey);
+            const model = modelByKey.get(agent.modelKey);
             return (
               <section
                 key={agent.id}

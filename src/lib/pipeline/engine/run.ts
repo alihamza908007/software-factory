@@ -16,7 +16,7 @@ import { formatCommandResults } from "@/lib/runtime/tools/toolchain";
 
 import { inferResolutionPath, meshBus, publishAgentEnvelope } from "@/lib/mesh/event-bus";
 import { ensureValidatorRuntime, verifyProjectRuntime } from "@/lib/mesh/validators";
-import { decomposeProjectTask } from "@/lib/pipeline/decomposer";
+import { decomposeProjectTask, type DecomposedTask } from "@/lib/pipeline/decomposer";
 import { negotiateTaskOwnership } from "@/lib/mesh/negotiation";
 
 import { executeCanvasTopology } from "@/lib/pipeline/scheduler";
@@ -42,6 +42,8 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
     return;
   }
   const settings = await getSettings();
+  const healLimit = Math.min(run.options.maxHealAttempts ?? settings.maxHealAttempts, 3);
+  const effectiveSettings = { ...settings, maxHealAttempts: healLimit };
   const agents = resolveAgents(await listAgents());
   const root = project.workspacePath;
   const resumePhase = resumeFrom ?? "requirements";
@@ -50,12 +52,15 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
   if (!activeRuns.has(runId)) activeRuns.set(runId, { controller, cancelled: false });
 
   try {
-    const activeAgents = Array.from(new Map(
-      Object.values(agents)
-        .filter((agent): agent is Agent => Boolean(agent))
-        .map((agent) => [agent.id, agent] as const),
-    ).values());
-    const negotiation = await negotiateTaskOwnership({
+    const isTopologyRun = Boolean(run.options.pipelineTopology && phaseStartIndex <= 2);
+    let taskPlan: DecomposedTask[] = [];
+    if (!isTopologyRun) {
+      const activeAgents = Array.from(new Map(
+        Object.values(agents)
+          .filter((agent): agent is Agent => Boolean(agent))
+          .map((agent) => [agent.id, agent] as const),
+      ).values());
+      const negotiation = await negotiateTaskOwnership({
       objective: run.prompt,
       agents: activeAgents,
       projectId: run.projectId,
@@ -71,16 +76,18 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
         `${negotiation.agreement}\n\n${negotiation.transcript.map((message) => `${message.fromAgent}: ${message.content}`).join("\n")}`,
       );
     }
-    const taskPlan = decomposeProjectTask(run.prompt, activeAgents);
+    const plan = decomposeProjectTask(run.prompt, activeAgents);
     const plannedAgent = (id: string) => {
-      const handle = taskPlan.find((task) => task.id === id)?.targetAgent;
+      const handle = plan.find((task) => task.id === id)?.targetAgent;
       return Object.values(agents).find((agent) => agent && `@${agent.handle.replace(/^@/, "")}` === handle);
     };
     agents.requirements = plannedAgent("task-requirements") ?? agents.requirements;
     agents.architecture = plannedAgent("task-architecture") ?? agents.architecture;
     agents.implementation = plannedAgent("task-implementation") ?? agents.implementation;
     agents.testing = plannedAgent("task-validation") ?? agents.testing;
-    await logPhase(runId, "requirements", "info", `Deterministic task decomposition created ${taskPlan.length} tasks.`, JSON.stringify(taskPlan, null, 2));
+    taskPlan = plan;
+    await logPhase(runId, "requirements", "info", `Deterministic task decomposition created ${plan.length} tasks.`, JSON.stringify(plan, null, 2));
+    }
     await fs.mkdir(root, { recursive: true });
     const existing = await listWorkspaceFiles(root, 5);
     if (!existing.length) {
@@ -143,7 +150,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       });
       let graph = await executeGraph();
       let graphRepair = 0;
-      const graphRepairLimit = Math.min(settings.maxHealAttempts, 3);
+      const graphRepairLimit = healLimit;
       while (!graph.ok && graphRepair < graphRepairLimit) {
         assertActive(runId);
         graphRepair += 1;
@@ -253,12 +260,12 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
         agents,
         run.prompt,
         "Custom SDLC DAG topology",
-        settings,
+        effectiveSettings,
         run.options.allowConcurrency,
       );
       let canvasRuntime = await verifyProjectRuntime({ projectId: project.id, agent: developer, runId });
       let canvasRepair = 0;
-      const canvasRepairLimit = Math.min(settings.maxHealAttempts, 3);
+      const canvasRepairLimit = healLimit;
       while (!canvasRuntime.passed && canvasRepair < canvasRepairLimit) {
         assertActive(runId);
         canvasRepair += 1;
@@ -514,6 +521,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       run.options.allowConcurrency,
       controller.signal,
       taskPlan,
+      healLimit,
     );
     await addArtifact(runId, "docs/SPEC.md");
     await finishPhase(runId, "implementation", "passed");
@@ -540,7 +548,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       agents,
       spec,
       architecture,
-      settings,
+      effectiveSettings,
       run.options.allowConcurrency,
     );
     assertActive(runId);
@@ -694,6 +702,7 @@ export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> 
   const project = run ? await getProject(run.projectId) : undefined;
   if (!run || !project) throw new Error("Run or project not found.");
   const settings = await getSettings();
+  const healLimit = Math.min(run.options.maxHealAttempts ?? settings.maxHealAttempts, 3);
   const agents = resolveAgents(await listAgents());
   const active = new AbortController();
   activeRuns.set(runId, { controller: active, cancelled: false });
@@ -723,7 +732,7 @@ export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> 
         .readFile(path.join(root, "docs/ARCHITECTURE.md"), "utf8")
         .catch(() => "");
       if (phaseId === "implementation") {
-        await processImplementation(runId, project, root, agents, spec, architecture, run.options.allowConcurrency, active.signal);
+        await processImplementation(runId, project, root, agents, spec, architecture, run.options.allowConcurrency, active.signal, [], healLimit);
       } else if (phaseId === "testing") {
         await processTesting(runId, project, root, agents, spec, architecture, settings, run.options.allowConcurrency);
       } else if (phaseId === "deployment") {

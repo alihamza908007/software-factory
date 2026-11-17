@@ -34,6 +34,7 @@ export async function processImplementation(
   allowConcurrency = false,
   signal?: AbortSignal,
   taskPlan: DecomposedTask[] = [],
+  healLimit?: number,
 ) {
   const developer = agents.implementation;
   if (!developer) throw new Error("No developer agent is configured.");
@@ -257,7 +258,7 @@ export async function processImplementation(
     agent: developer,
     runId,
     initial: runtime,
-    maxAttempts: Math.min((await getSettings()).maxHealAttempts, 3),
+    maxAttempts: Math.min(healLimit ?? (await getSettings()).maxHealAttempts, 3),
     verify: () =>
       verifyProjectRuntime({ projectId: project.id, agent: developer, runId, onOutput: onRuntimeOutput }),
     onAttempt: async (event) => {

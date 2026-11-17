@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useFactory } from "@/lib/data/store";
 import type {
@@ -64,6 +65,7 @@ function summaryFromReport(report: ValidationReport): ValidationSummary {
  * handling here prevents the two surfaces from drifting apart.
  */
 export function useChatSession() {
+  const router = useRouter();
   const { agents, settings, fetchRuns } = useFactory();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -329,8 +331,12 @@ export function useChatSession() {
     if (event === "run") {
       const { run } = payload as { run: Run };
       void fetchRuns();
-      toast.success("Pipeline launched", {
-        description: "Watch the agents in the Pipeline view.",
+      toast.success("Run launched", {
+        description: "Follow it in the Runs view.",
+        action: {
+          label: "View run",
+          onClick: () => router.push(`/pipeline?run=${run.id}`),
+        },
       });
       return;
     }

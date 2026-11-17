@@ -12,15 +12,24 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const [projects, runs] = await Promise.all([listProjects(), listRuns(200)]);
+    const runsByProject = new Map<string, typeof runs>();
+    for (const run of runs) {
+      const list = runsByProject.get(run.projectId);
+      if (list) list.push(run);
+      else runsByProject.set(run.projectId, [run]);
+    }
     return json({
       projects: projects
         .slice()
         .sort((a, b) => b.updatedAt - a.updatedAt)
-        .map((project) => ({
-          ...project,
-          runCount: runs.filter((run) => run.projectId === project.id).length,
-          lastRun: runs.find((run) => run.projectId === project.id) ?? null,
-        })),
+        .map((project) => {
+          const projectRuns = runsByProject.get(project.id) ?? [];
+          return {
+            ...project,
+            runCount: projectRuns.length,
+            lastRun: projectRuns[0] ?? null,
+          };
+        }),
     });
   } catch (error) {
     return apiError(error);

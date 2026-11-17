@@ -95,7 +95,7 @@ async function persist(db: FactoryDb) {
   await ensureDirs();
   db.updatedAt = Date.now();
   const tmp = `${DB_PATH}.${process.pid}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(db, null, 2), { mode: 0o600 });
+  await fs.writeFile(tmp, JSON.stringify(db), { mode: 0o600 });
   await fs.rename(tmp, DB_PATH);
 }
 
@@ -385,7 +385,18 @@ export async function deleteThread(id: string): Promise<void> {
 export async function resetDb(): Promise<FactoryDb> {
   const db = freshDb();
   globalStore.__factoryDb = db;
-  await persist(db);
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  pendingDb = db;
+  const resolvers = persistResolvers;
+  persistResolvers = [];
+  try {
+    await persist(db);
+  } finally {
+    resolvers.forEach((resolve) => resolve());
+  }
   return db;
 }
 

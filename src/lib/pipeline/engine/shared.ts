@@ -51,29 +51,24 @@ export async function logPhase(
   message: string,
   detail?: string,
 ) {
+  const log = {
+    id: uid("log"),
+    at: Date.now(),
+    level,
+    message,
+    detail,
+  };
   const run = await updateRun(runId, (run) => {
     const phase = run.phases.find((item) => item.id === phaseId);
     if (!phase) return;
-    phase.logs.push({
-      id: uid("log"),
-      at: Date.now(),
-      level,
-      message,
-      detail,
-    });
+    phase.logs.push({ ...log });
     if (phase.logs.length > 260) phase.logs = phase.logs.slice(-260);
   });
   runEvents.publish(runId, {
     type: "log",
     runId,
     phaseId,
-    log: {
-      id: uid("log"),
-      at: Date.now(),
-      level,
-      message,
-      detail,
-    },
+    log,
   });
   if (run) {
     const phase = run.phases.find((item) => item.id === phaseId);
@@ -173,7 +168,7 @@ export async function finishPhase(
 ) {
   await setPhase(runId, phaseId, {
     status,
-    progress: status === "passed" ? 100 : 100,
+    ...(status === "failed" ? {} : { progress: 100 }),
     completedAt: Date.now(),
     error,
   });

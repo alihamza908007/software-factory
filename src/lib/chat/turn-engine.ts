@@ -171,9 +171,9 @@ export async function runChatTurn(params: {
         let targets = mentionResolution.agents;
         if (!targets.length) {
           const preferred =
-            agents.find((agent) => agent.id === body.agentId) ??
-            agents.find((agent) => agent.id === settings.defaultAgentId) ??
-            agents.find((agent) => /product|manager/i.test(agent.role)) ??
+            agents.find((agent) => agent.enabled && agent.id === body.agentId) ??
+            agents.find((agent) => agent.enabled && agent.id === settings.defaultAgentId) ??
+            agents.find((agent) => agent.enabled && /product|manager/i.test(agent.role)) ??
             agents.find((agent) => agent.enabled);
           if (preferred) targets = [preferred];
         }
@@ -200,6 +200,7 @@ export async function runChatTurn(params: {
         }
 
         const history = (await getThread(thread.id))?.messages ?? [];
+        const promptHistory = history.filter((message) => message.id !== userMessage.id);
         const context = await projectContext(body.projectId);
         const workspaceProject = body.projectId ? await getProject(body.projectId) : undefined;
         let workspaceSnapshot = workspaceProject
@@ -432,7 +433,7 @@ export async function runChatTurn(params: {
                     )
                   : chatPrompt(
                       item.agent,
-                      compactConversationHistory(history
+                      compactConversationHistory(promptHistory
                         .filter((message) => message.role === "user" || message.role === "assistant")
                         .map((message) => ({
                           role: message.role as "user" | "assistant",
@@ -528,7 +529,7 @@ export async function runChatTurn(params: {
                           workspaceSnapshot,
                           agents,
                         )
-                      : chatPrompt(item.agent, compactConversationHistory(history.filter((message) => message.role === "user" || message.role === "assistant").map((message) => ({ role: message.role as "user" | "assistant", content: message.content, agentName: message.agentName }))), body.message.trim(), context, contract);
+                      : chatPrompt(item.agent, compactConversationHistory(promptHistory.filter((message) => message.role === "user" || message.role === "assistant").map((message) => ({ role: message.role as "user" | "assistant", content: message.content, agentName: message.agentName }))), body.message.trim(), context, contract);
                     executionMessages = retryMessages;
                     await updateThreadMessage(thread.id, assistantMessage.id, { agentId: item.agent.id, agentName: item.agent.name, agentColor: item.agent.color, content: "", pending: true });
                     assistantMessage.agentId = item.agent.id;
@@ -543,7 +544,7 @@ export async function runChatTurn(params: {
                       priority: 6,
                       maxTokens: contract.maxTokenBudget,
                     timeoutMs: 120_000,
-                      onToken: (_delta, full) => send("token", { messageId: assistantMessage.id, agentId: item.agent.id, delta: full, text: full.replace(/^TASK_ACCEPTED\s*:?\s*/i, "") }),
+                      onToken: (delta, full) => send("token", { messageId: assistantMessage.id, agentId: item.agent.id, delta, text: full.replace(/^TASK_ACCEPTED\s*:?\s*/i, "") }),
                     });
                   }
                   const visibleAnswer = outcome.result.text.replace(/^TASK_ACCEPTED\s*:?\s*/i, "").trim();
@@ -573,7 +574,7 @@ export async function runChatTurn(params: {
                       priority: 6,
                       maxTokens: contract.maxTokenBudget,
                     timeoutMs: 120_000,
-                      onToken: (_delta, full) => send("token", { messageId: assistantMessage.id, delta: full, text: full.replace(/^TASK_ACCEPTED\s*:?\s*/i, "") }),
+                      onToken: (delta, full) => send("token", { messageId: assistantMessage.id, delta, text: full.replace(/^TASK_ACCEPTED\s*:?\s*/i, "") }),
                     });
                   }
                   const finalAnswer = outcome.result.text.replace(/^TASK_ACCEPTED\s*:?\s*/i, "").trim();
@@ -983,6 +984,12 @@ export async function runChatTurn(params: {
                     }
                   }
                 } catch (error) {
+                  if (error instanceof Error && error.name === "AbortError") {
+                    await updateThreadMessage(thread.id, assistantMessage.id, { pending: false });
+                    send("done", {});
+                    close();
+                    return;
+                  }
                   const message = error instanceof Error ? error.message : String(error);
                   const failedTree = workspaceProject ? await listWorkspaceFiles(workspaceProject.workspacePath, 120).catch(() => []) : [];
                   publishAgentEnvelope({

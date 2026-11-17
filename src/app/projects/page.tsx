@@ -58,11 +58,6 @@ export default function ProjectsPage() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [deleting, setDeleting] = useState<Project | null>(null);
 
-  useEffect(() => {
-    void fetchProjects();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const filtered = useMemo(
     () =>
       projects.filter((project) =>
