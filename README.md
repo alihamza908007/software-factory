@@ -8,8 +8,8 @@ Everything runs locally. Cloud models are optional and only used as routing targ
 
 ## Highlights
 
-- **Agent Manager** — create agents with a name, role and system prompt; assign any local or cloud model; switch a model mid-session; inspect per-agent performance (TTFT, total time, tok/s, tokens, cost, VRAM).
-- **Chat Matrix** — one master chat thread, route messages with `@handle`, and let agents hand work off to each other autonomously.
+- **Agents** — create agents with a name, role and system prompt; assign any local or cloud model; switch a model mid-session; inspect per-agent performance (TTFT, total time, tok/s, tokens, cost, VRAM).
+- **Chat** — one master thread, route messages with `@handle`, and let agents hand work off to each other autonomously.
 - **5-phase SDLC engine** — Requirements → Architecture → Implementation → Test/Lint/Self-heal → Deployment/CI.
 - **Self-healing loop** — the toolchain runs locally, failures are scraped and piped back to the developer agent, and the loop repeats until the suite passes or the heal budget is exhausted.
 - **Git automation** — a feature branch per run, semantic commits per phase, and a generated `.github/workflows/main.yml`. With a GitHub token configured it pushes the branch and drafts a pull request with an agent-written summary.
@@ -53,8 +53,8 @@ npm run build && npm start
 
 1. Open **Settings** and confirm the providers are online. Models are discovered live from Ollama, LM Studio and OpenCode; cloud keys unlock OpenRouter, Anthropic, OpenAI and Gemini models.
 2. Open **Projects**, create a project (name, brief, stack: `node`, `next` or `python`). A scaffold and a git repo are created in the sandbox, and a shortcut to the project appears in **`~/Desktop/Software Factory`**.
-3. Click **Run pipeline** and paste a build brief. The engine executes all five phases and streams logs, commands and self-heal attempts to the pipeline view.
-4. Open **Pipeline → Canvas editor** to design a custom DAG. Agent nodes call the assigned model, validator nodes run local assertions, router nodes choose `pass`/`fail` branches, and **Run DAG** streams live node status without blocking other branches.
+3. Click **New run** and paste a build brief. The engine executes all five phases and streams logs, commands and self-heal attempts to the **Runs** view.
+4. Open **Runs → Canvas** to design a custom DAG. Agent nodes call the assigned model, validator nodes run local assertions, router nodes choose `pass`/`fail` branches, and **Run DAG** streams live node status without blocking other branches.
 5. Use **Chat** to talk to agents (`@morgan`, `@ada`, `@lin`, `@vera`, `@deacon`), or launch an autonomous run straight from chat. Every agent mentioned by another agent receives its own validated handoff.
 6. Use **Agents** to tune models, prompts and temperatures, and to watch per-agent metrics.
 
@@ -82,8 +82,7 @@ src/
     api/                   models, agents, projects, runs (+SSE), chat (+SSE), canvas, threads, settings, providers, resources, health
   components/
     canvas/                React Flow agent, validator and router nodes + DAG editor
-    mesh/                  Mesh HUD widgets (agent node, memory, negotiation, analytics)
-    pipeline/              Pipeline board widgets (phase column, log stream, artifact row)
+    pipeline/              Run board widgets (phase column, log stream, artifact row)
     ...
   lib/
     core/                  cross-cutting primitives: types, constants, api/SSE helpers, utils

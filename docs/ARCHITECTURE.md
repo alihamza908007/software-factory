@@ -4,7 +4,7 @@ Software Factory is a local-first Next.js application. It has three layers:
 
 | Layer | Location | Responsibility |
 | --- | --- | --- |
-| UI | `src/app/**/page.tsx`, `src/components/**` | Client components, React Flow canvas, chat matrix, dashboards |
+| UI | `src/app/**/page.tsx`, `src/components/**` | Client components (Home, Projects, Runs, Chat, Agents, Settings), React Flow canvas |
 | API | `src/app/api/**/route.ts` | Thin route handlers: validate input, call `src/lib`, stream events |
 | Domain | `src/lib/**` | Framework-free logic: orchestration, providers, mesh, persistence, runtime |
 
