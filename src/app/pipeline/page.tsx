@@ -2,57 +2,25 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import {
-  Activity,
-  AlertTriangle,
-  Boxes,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Circle,
-  Clock,
-  Cloud,
-  Cpu,
-  ExternalLink,
-  FileCode2,
-  GitBranch,
-  GitCommitHorizontal,
-  GitPullRequest,
-  Loader2,
-  Play,
-  Plus,
-  Pencil,
-  RefreshCw,
-  Rocket,
-  Terminal,
-  Timer,
-  Workflow,
-  Wrench,
-  XCircle,
-  Zap,
-} from "lucide-react";
+import { AlertTriangle, Boxes, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, GitPullRequest, Loader2, Play, Plus, Pencil, RefreshCw, Rocket, Workflow, Wrench, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useFactory } from "@/lib/data/store";
-import type {
-  DeadLoopInfo,
-  GuardrailResult,
-  PhaseId,
-  PhaseState,
-  Run,
-  RunStatus,
-} from "@/lib/core/types";
+import type { DeadLoopInfo, GuardrailResult, PhaseId, Run } from "@/lib/core/types";
 import { PHASES, SDLC_PHASE_META } from "@/lib/core/constants";
-import { cn, formatDuration, formatMB, timeAgo, truncate } from "@/lib/core/utils";
+import { cn, formatDuration, timeAgo, truncate } from "@/lib/core/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusPill } from "@/components/shared/status";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
-import { ModelBadge } from "@/components/shared/model-badge";
+
 import { EmptyState } from "@/components/shared/empty-state";
 import { launchRunDialog } from "@/components/shared/run-launcher";
 import { PipelineCanvas } from "@/components/canvas/PipelineCanvas";
+import { AllLogs } from "@/components/pipeline/all-logs";
+import { ArtifactRow } from "@/components/pipeline/artifact-row";
+import { PhaseColumn } from "@/components/pipeline/phase-column";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -945,213 +913,6 @@ export default function PipelinePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function PhaseColumn({
-  phaseId,
-  phase,
-  run,
-  agents,
-  models,
-  onInspect,
-}: {
-  phaseId: PhaseId;
-  phase?: PhaseState;
-  run: Run;
-  agents: ReturnType<typeof useFactory.getState>["agents"];
-  models: ReturnType<typeof useFactory.getState>["models"];
-  onInspect: (id: PhaseId) => void;
-}) {
-  const meta = SDLC_PHASE_META[phaseId];
-  const definition = PHASES.find((item) => item.id === phaseId)!;
-  const agent = agents.find((item) => item.id === phase?.agentId);
-  const model = models.find((item) => item.key === agent?.modelKey);
-  const lastLogs = phase?.logs.slice(-3) ?? [];
-  const status = phase?.status ?? "pending";
-  return (
-    <section className="flex w-[252px] shrink-0 flex-col rounded-xl border border-border/70 bg-card/50">
-      <div className="border-b border-border/60 p-3">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[9px] uppercase tracking-[0.16em]" style={{ color: meta.accent }}>
-            {meta.short} · 0{meta.index}
-          </span>
-          <StatusPill status={status} kind="phase" />
-        </div>
-        <div className="mt-1 text-xs font-medium">{definition.name}</div>
-        <div className="mt-2 flex items-center gap-1.5">
-          {agent ? (
-            <>
-              <AgentAvatar name={agent.name} color={agent.color} icon={agent.icon} size="sm" />
-              <span className="truncate text-[10px]">{agent.name}</span>
-              <ModelBadge model={model} modelKey={agent.modelKey} compact className="ml-auto max-w-[90px]" />
-            </>
-          ) : (
-            <span className="font-mono text-[9px] text-muted-foreground">{definition.agentRole}</span>
-          )}
-        </div>
-      </div>
-      <div className="flex-1 space-y-2.5 p-3">
-        <p className="min-h-[48px] text-[10px] leading-relaxed text-muted-foreground">{definition.description}</p>
-        <div>
-          <div className="mb-1 flex items-center justify-between font-mono text-[8px] text-muted-foreground">
-            <span>progress</span>
-            <span>{phase?.progress ?? 0}%</span>
-          </div>
-          <Progress
-            value={phase?.progress ?? 0}
-            className="h-1"
-            indicatorClassName={status === "failed" ? "bg-factory-red" : status === "running" ? "bg-factory-amber" : "bg-factory-lime"}
-          />
-        </div>
-
-        {!!phase?.artifacts.length && (
-          <div className="flex flex-wrap gap-1">
-            {phase.artifacts.slice(0, 3).map((artifact) => (
-              <span key={artifact} className="max-w-full truncate rounded border border-border/60 bg-secondary/50 px-1.5 py-0.5 font-mono text-[8px] text-muted-foreground">
-                {artifact}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {!!phase?.healAttempts.length && (
-          <div className="rounded border border-factory-amber/20 bg-factory-amber/5 px-2 py-1.5">
-            <div className="flex items-center gap-1 font-mono text-[8px] uppercase tracking-wider text-factory-amber">
-              <Wrench className="h-2.5 w-2.5" />
-              {phase.healAttempts.length} heal {phase.healAttempts.length === 1 ? "loop" : "loops"}
-            </div>
-            {phase.healAttempts.slice(-2).map((attempt) => (
-              <div key={attempt.attempt} className="mt-0.5 truncate font-mono text-[8px] text-muted-foreground">
-                #{attempt.attempt} {attempt.appliedFiles.length} files · {attempt.result}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="space-y-1">
-          {lastLogs.map((log) => (
-            <div key={log.id} className="flex gap-1.5 text-[9px] leading-snug">
-              <span
-                className={cn(
-                  "mt-1 h-1 w-1 shrink-0 rounded-full",
-                  log.level === "error"
-                    ? "bg-factory-red"
-                    : log.level === "success"
-                      ? "bg-factory-lime"
-                      : log.level === "warn"
-                        ? "bg-factory-amber"
-                        : "bg-muted-foreground",
-                )}
-              />
-              <span className="line-clamp-2 text-muted-foreground">{log.message}</span>
-            </div>
-          ))}
-          {!lastLogs.length && (
-            <div className="flex items-center gap-1.5 py-2 text-[9px] text-muted-foreground/60">
-              <Circle className="h-2 w-2" />
-              waiting for upstream phase
-            </div>
-          )}
-        </div>
-      </div>
-      <button
-        onClick={() => onInspect(phaseId)}
-        className="flex items-center justify-between border-t border-border/60 px-3 py-2 font-mono text-[8px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
-      >
-        Inspect trace
-        <ChevronRight className="h-3 w-3" />
-      </button>
-    </section>
-  );
-}
-
-function AllLogs({ run }: { run: Run }) {
-  const [level, setLevel] = useState<string>("all");
-  const logs = useMemo(
-    () =>
-      run.phases
-        .flatMap((phase) =>
-          phase.logs.map((log) => ({ ...log, phase: phase.name, phaseId: phase.id })),
-        )
-        .sort((a, b) => a.at - b.at)
-        .filter((log) => level === "all" || log.level === level),
-    [run, level],
-  );
-  return (
-    <div className="panel overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-        <div className="flex items-center gap-2">
-          <Terminal className="h-3.5 w-3.5 text-factory-lime" />
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            factory.log
-          </span>
-          <Badge variant="outline">{logs.length}</Badge>
-        </div>
-        <div className="flex gap-1">
-          {["all", "success", "error", "command", "agent"].map((value) => (
-            <button
-              key={value}
-              onClick={() => setLevel(value)}
-              className={cn(
-                "rounded px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider",
-                level === value ? "bg-factory-lime/10 text-factory-lime" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {value}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="max-h-[520px] overflow-y-auto p-3 font-mono">
-        {logs.map((log) => (
-          <div key={log.id} className="flex gap-2 border-b border-border/20 py-1.5 text-[10px] last:border-0">
-            <span className="w-16 shrink-0 text-muted-foreground/50">
-              {new Date(log.at).toLocaleTimeString([], { hour12: false })}
-            </span>
-            <span
-              className={cn(
-                "w-14 shrink-0 uppercase",
-                log.level === "error"
-                  ? "text-factory-red"
-                  : log.level === "success"
-                    ? "text-factory-lime"
-                    : log.level === "warn"
-                      ? "text-factory-amber"
-                      : log.level === "command"
-                        ? "text-factory-cyan"
-                        : "text-muted-foreground/60",
-              )}
-            >
-              {log.level}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="text-foreground/80">{log.message}</span>
-              {log.detail && (
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-[9px] leading-relaxed text-muted-foreground/70">
-                  {log.detail}
-                </pre>
-              )}
-            </span>
-          </div>
-        ))}
-        {!logs.length && <div className="py-12 text-center text-xs text-muted-foreground">No log lines match.</div>}
-      </div>
-    </div>
-  );
-}
-
-function ArtifactRow({ label, path, exists }: { label: string; path: string; exists: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-2 rounded border border-border/50 bg-secondary/50 px-2 py-1.5">
-      <span className="flex items-center gap-1.5 text-muted-foreground">
-        <FileCode2 className="h-3 w-3" />
-        {label}
-      </span>
-      <span className={cn("max-w-[180px] truncate font-mono text-[9px]", exists ? "text-factory-lime" : "text-muted-foreground/50")}>
-        {exists ? path : "not generated"}
-      </span>
     </div>
   );
 }
