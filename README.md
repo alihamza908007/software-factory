@@ -70,6 +70,10 @@ npm run build && npm start
 
 Every agent has a fallback model; if a cloud call fails the router retries on the fallback.
 
+### Optional specialists
+
+Eight additional specialists ship with the factory but start disabled: **Sentry** (security audit), **Atlas** (performance), **Quill** (docs), **Cora** (data model), **Iris** (accessibility), **Curator** (dependencies), **Pilot** (release) and **Wren** (test fixtures). Open **Agents** to switch any of them on — the toggle is labelled **In factory** and disables the agent from runs, chat mentions and mesh routing. Use **Enable all** to activate the whole roster or **Core only** to return to the original five. New installs and existing `.data/factory.json` files both receive the specialists on first load.
+
 ## Architecture
 
 The app is a Next.js App Router project with a strict split between UI, API routes and a
