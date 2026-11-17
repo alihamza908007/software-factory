@@ -72,23 +72,27 @@ Every agent has a fallback model; if a cloud call fails the router retries on th
 
 ## Architecture
 
+The app is a Next.js App Router project with a strict split between UI, API routes and a
+framework-free domain layer under `src/lib`. A deeper module-by-module guide lives in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ```
 src/
   app/                     Next.js App Router pages + API routes
     api/                   models, agents, projects, runs (+SSE), chat (+SSE), canvas, threads, settings, providers, resources, health
   components/
     canvas/                React Flow agent, validator and router nodes + DAG editor
+    mesh/                  Mesh HUD widgets (agent node, memory, negotiation, analytics)
+    pipeline/              Pipeline board widgets (phase column, log stream, artifact row)
     ...
   lib/
-    llm/                   universal-provider.ts (one ModelRequest/streaming contract for every backend)
-    canvas/                pure topology defaults and cycle validation (safe for the browser)
-    orchestrator/          engine.ts (5 phases, self-heal, commits, CI, PR), guardrails.ts, scheduler.ts, prompts.ts, parse.ts
-    providers/             catalog.ts (discovery), ollama.ts, opencode.ts (CLI worker), router.ts
-    queue/                 resource-manager.ts (VRAM budget, heavy/light concurrency, queue)
-    tools/                 terminal.ts (allowlisted runner), toolchain.ts, git.ts, github.ts, workflow.ts
-    db.ts                  JSON persistence in .data
-    env-sync.ts            scoped .env.local synchronization for provider settings
-    workspace.ts           sandboxed file IO
+    core/                  cross-cutting primitives: types, constants, api/SSE helpers, utils
+    data/                  persistence and sandboxed IO: db.ts, store.ts, workspace.ts
+    providers/             catalog.ts (discovery), ollama.ts, opencode.ts, router.ts, universal-provider.ts
+    pipeline/              SDLC engine (engine/), guardrails, scheduler, prompts, parse, repair
+    mesh/                  event bus, validators, negotiation, memory, analytics, tools
+    chat/                  turn-engine.ts (chat routing and handoffs)
+    runtime/               sandbox execution, VRAM queue, toolchain + git/github/workflow tools
 ```
 
 ### Model routing
