@@ -21,13 +21,13 @@ import {
   Waypoints,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
+import { useFactory } from "@/lib/data/store";
 import type {
   Agent,
   MeshAgentStatus,
   MeshEvent,
-} from "@/lib/types";
-import { cn, formatTokens, timeAgo } from "@/lib/utils";
+} from "@/lib/core/types";
+import { cn, formatTokens, timeAgo } from "@/lib/core/utils";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

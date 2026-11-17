@@ -1,4 +1,4 @@
-import { sseChunk, sseHeaders } from "@/lib/api";
+import { sseChunk, sseHeaders } from "@/lib/core/api";
 import { getControlSnapshot } from "@/lib/mesh/controls";
 import { hydrateMeshEvents, meshBus } from "@/lib/mesh/event-bus";
 import { ensureValidatorRuntime } from "@/lib/mesh/validators";

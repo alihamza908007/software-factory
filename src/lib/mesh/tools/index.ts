@@ -1,1 +1,1 @@
-export * from "./registry";
+export * from "@/lib/mesh/tools/registry";

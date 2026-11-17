@@ -1,16 +1,16 @@
-import { apiError, json, readJson, sseChunk, sseHeaders } from "@/lib/api";
-import { defaultCanvasTopology, validateCanvasTopology } from "@/lib/canvas/topology";
+import { apiError, json, readJson, sseChunk, sseHeaders } from "@/lib/core/api";
+import { defaultCanvasTopology, validateCanvasTopology } from "@/lib/pipeline/topology";
 import {
   clearActiveTopology,
   getCanvasSnapshot,
   getProject,
   listAgents,
   saveCanvasTopology,
-} from "@/lib/db";
+} from "@/lib/data/db";
 import { meshBus } from "@/lib/mesh/event-bus";
-import { executeCanvasTopology } from "@/lib/orchestrator/scheduler";
-import type { CanvasTopology } from "@/lib/types";
-import { uid } from "@/lib/utils";
+import { executeCanvasTopology } from "@/lib/pipeline/scheduler";
+import type { CanvasTopology } from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

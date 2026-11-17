@@ -1,13 +1,13 @@
-import { apiError, json, readJson } from "@/lib/api";
-import { getAgent, getProject, getSettings, listAgents } from "@/lib/db";
+import { apiError, json, readJson } from "@/lib/core/api";
+import { getAgent, getProject, getSettings, listAgents } from "@/lib/data/db";
 import { meshBus, publishAgentEnvelope, setMeshAgentStatus } from "@/lib/mesh/event-bus";
 import { verifyProjectRuntime } from "@/lib/mesh/validators";
-import { runRepairCycle } from "@/lib/orchestrator/repair-engine";
-import { applyFileBlocks, parseFileBlocks } from "@/lib/orchestrator/parse";
-import { healPrompt } from "@/lib/orchestrator/prompts";
+import { runRepairCycle } from "@/lib/pipeline/repair-engine";
+import { applyFileBlocks, parseFileBlocks } from "@/lib/pipeline/parse";
+import { healPrompt } from "@/lib/pipeline/prompts";
 import { generateWithAgent } from "@/lib/providers/router";
-import { readWorkspaceContext } from "@/lib/workspace";
-import type { Agent } from "@/lib/types";
+import { readWorkspaceContext } from "@/lib/data/workspace";
+import type { Agent } from "@/lib/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

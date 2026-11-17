@@ -1,4 +1,4 @@
-import { readProjectFile } from "../workspace";
+import { readProjectFile } from "@/lib/data/workspace";
 
 export interface SharedCacheOptions {
   /** Scope the entry to a single run/session. Omit for mesh-wide sharing. */

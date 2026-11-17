@@ -1,7 +1,7 @@
-import { apiError, json, readJson } from "@/lib/api";
-import { getProject } from "@/lib/db";
+import { apiError, json, readJson } from "@/lib/core/api";
+import { getProject } from "@/lib/data/db";
 import { ensureValidatorRuntime, validateArtifacts, type ValidationArtifact } from "@/lib/mesh/validators";
-import { listWorkspaceFiles, readProjectFile } from "@/lib/workspace";
+import { listWorkspaceFiles, readProjectFile } from "@/lib/data/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

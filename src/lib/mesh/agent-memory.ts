@@ -1,15 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DATA_ROOT } from "../db";
+import { DATA_ROOT } from "@/lib/data/db";
 import type {
   Agent,
   AgentConstraint,
   AgentHandoffMemory,
   AgentMemory,
   GuardrailResult,
-} from "../types";
-import { uid } from "../utils";
-import { meshBus } from "./event-bus";
+} from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
+import { meshBus } from "@/lib/mesh/event-bus";
 
 const MEMORY_PATH = path.join(DATA_ROOT, "mesh-memory.json");
 const MAX_CONSTRAINTS_PER_AGENT = 24;

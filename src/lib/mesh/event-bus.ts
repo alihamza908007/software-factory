@@ -1,14 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DATA_ROOT } from "../db";
+import { DATA_ROOT } from "@/lib/data/db";
 import type {
   MeshAgentState,
   MeshAgentStatus,
   MeshEvent,
   MeshEventType,
   MeshSeverity,
-} from "../types";
-import { uid } from "../utils";
+} from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
 
 const EVENT_LOG_PATH = path.join(DATA_ROOT, "mesh-events.json");
 const PERSIST_DEBOUNCE_MS = 350;
@@ -42,7 +42,7 @@ export interface AgentEnvelope {
   workspaceRoot?: string;
   status?: "INFO" | "BLOCKED" | "FAILED" | "COMPLETED";
   /** Three-sentence semantic summary and modified-file pointers. */
-  summary?: import("../types").HandoffSummary;
+  summary?: import("@/lib/core/types").HandoffSummary;
 }
 
 export function inferResolutionPath(detail: string): string {

@@ -1,7 +1,7 @@
-import { apiError, json } from "@/lib/api";
-import { createThread, listThreads, projectThreadMessages } from "@/lib/db";
-import type { ChatThread } from "@/lib/types";
-import { uid } from "@/lib/utils";
+import { apiError, json } from "@/lib/core/api";
+import { createThread, listThreads, projectThreadMessages } from "@/lib/data/db";
+import type { ChatThread } from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

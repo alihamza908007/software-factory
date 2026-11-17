@@ -3,8 +3,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { getSettings } from "../db";
-import type { FactorySettings, ModelInfo, ModelProvider } from "../types";
+import { getSettings } from "@/lib/data/db";
+import type { FactorySettings, ModelInfo, ModelProvider } from "@/lib/core/types";
 
 const execFileAsync = promisify(execFile);
 

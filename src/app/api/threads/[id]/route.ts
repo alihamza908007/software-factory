@@ -1,5 +1,5 @@
-import { apiError, json } from "@/lib/api";
-import { deleteThread, getThread, updateDb } from "@/lib/db";
+import { apiError, json } from "@/lib/core/api";
+import { deleteThread, getThread, updateDb } from "@/lib/data/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

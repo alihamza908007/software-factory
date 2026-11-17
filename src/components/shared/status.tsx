@@ -1,5 +1,5 @@
-import { cn } from "@/lib/utils";
-import type { PhaseStatus, RunStatus } from "@/lib/types";
+import { cn } from "@/lib/core/utils";
+import type { PhaseStatus, RunStatus } from "@/lib/core/types";
 
 const RUN_STYLES: Record<RunStatus, { label: string; className: string; dot: string }> = {
   queued: { label: "Queued", className: "text-muted-foreground", dot: "bg-muted-foreground" },

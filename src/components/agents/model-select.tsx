@@ -1,9 +1,9 @@
 "use client";
 
 import { Cloud, Cpu, Server } from "lucide-react";
-import type { ModelInfo } from "@/lib/types";
+import type { ModelInfo } from "@/lib/core/types";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn, formatMB } from "@/lib/utils";
+import { cn, formatMB } from "@/lib/core/utils";
 
 export function ModelSelect({
   value,

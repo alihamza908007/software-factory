@@ -1,5 +1,5 @@
-import { apiError, json } from "@/lib/api";
-import { getAgent } from "@/lib/db";
+import { apiError, json } from "@/lib/core/api";
+import { getAgent } from "@/lib/data/db";
 import { generateWithAgent } from "@/lib/providers/router";
 
 export const runtime = "nodejs";

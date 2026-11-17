@@ -21,9 +21,9 @@ import {
   Waypoints,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
-import type { Agent } from "@/lib/types";
-import { cn, formatDuration, formatTokens, timeAgo } from "@/lib/utils";
+import { useFactory } from "@/lib/data/store";
+import type { Agent } from "@/lib/core/types";
+import { cn, formatDuration, formatTokens, timeAgo } from "@/lib/core/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { AgentAvatar } from "@/components/shared/agent-avatar";
 import { ModelBadge } from "@/components/shared/model-badge";

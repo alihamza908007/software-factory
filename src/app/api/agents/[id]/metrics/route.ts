@@ -1,5 +1,5 @@
-import { apiError, json } from "@/lib/api";
-import { getAgent, listMetrics } from "@/lib/db";
+import { apiError, json } from "@/lib/core/api";
+import { getAgent, listMetrics } from "@/lib/data/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

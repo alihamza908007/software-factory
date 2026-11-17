@@ -1,6 +1,6 @@
-import { apiError, json } from "@/lib/api";
-import { getProject } from "@/lib/db";
-import { listWorkspaceFiles, readProjectFile, writeProjectFile } from "@/lib/workspace";
+import { apiError, json } from "@/lib/core/api";
+import { getProject } from "@/lib/data/db";
+import { listWorkspaceFiles, readProjectFile, writeProjectFile } from "@/lib/data/workspace";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

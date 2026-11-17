@@ -1,8 +1,8 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DATA_ROOT } from "../db";
-import type { MeshControlSnapshot } from "../types";
-import { meshBus } from "./event-bus";
+import { DATA_ROOT } from "@/lib/data/db";
+import type { MeshControlSnapshot } from "@/lib/core/types";
+import { meshBus } from "@/lib/mesh/event-bus";
 
 const CONTROL_PATH = path.join(DATA_ROOT, "mesh-controls.json");
 

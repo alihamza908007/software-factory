@@ -1,8 +1,8 @@
 "use client";
 
 import { Cloud, Cpu, Server } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { ModelInfo } from "@/lib/types";
+import { cn } from "@/lib/core/utils";
+import type { ModelInfo } from "@/lib/core/types";
 
 export function ProviderIcon({
   provider,

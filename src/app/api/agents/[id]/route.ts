@@ -1,6 +1,6 @@
-import { apiError, json } from "@/lib/api";
-import { deleteAgent, getAgent, listMetrics, saveAgent } from "@/lib/db";
-import type { Agent } from "@/lib/types";
+import { apiError, json } from "@/lib/core/api";
+import { deleteAgent, getAgent, listMetrics, saveAgent } from "@/lib/data/db";
+import type { Agent } from "@/lib/core/types";
 import { clearAgentMemory } from "@/lib/mesh/agent-memory";
 
 export const runtime = "nodejs";

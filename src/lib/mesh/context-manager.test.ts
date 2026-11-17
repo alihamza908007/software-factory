@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { compactAgentContext, compactConversationHistory } from "./context-manager";
-import { sanitizeFtsQuery } from "./vector-memory";
+import { compactAgentContext, compactConversationHistory } from "@/lib/mesh/context-manager";
+import { sanitizeFtsQuery } from "@/lib/mesh/vector-memory";
 
 describe("compactAgentContext", () => {
   it("preserves code when input is within maxChars limit", () => {

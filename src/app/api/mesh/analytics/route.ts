@@ -1,8 +1,8 @@
-import { apiError, json } from "@/lib/api";
-import { listAgents } from "@/lib/db";
+import { apiError, json } from "@/lib/core/api";
+import { listAgents } from "@/lib/data/db";
 import { ensureAnalyticsRuntime, getAgentAnalytics } from "@/lib/mesh/analytics";
 import { sharedCache } from "@/lib/mesh/shared-cache";
-import { scratchpadStats } from "@/lib/system/storage-cleaner";
+import { scratchpadStats } from "@/lib/runtime/system/storage-cleaner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

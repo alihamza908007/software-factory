@@ -1,5 +1,5 @@
 import type { Node } from "@xyflow/react";
-import type { CanvasNodeData } from "@/lib/types";
+import type { CanvasNodeData } from "@/lib/core/types";
 
 export type FlowNodeData = CanvasNodeData & Record<string, unknown>;
 

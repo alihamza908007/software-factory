@@ -2,7 +2,7 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Bot, CheckCircle2, Cloud, Cpu, Loader2, XCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/core/utils";
 import type { AgentFlowNode } from "./types";
 
 function statusIcon(status?: string) {

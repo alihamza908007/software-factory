@@ -1,9 +1,9 @@
-import { apiError, json } from "@/lib/api";
-import { getSettings, updateSettings } from "@/lib/db";
-import { syncEnvFile } from "@/lib/env-sync";
+import { apiError, json } from "@/lib/core/api";
+import { getSettings, updateSettings } from "@/lib/data/db";
+import { syncEnvFile } from "@/lib/core/env-sync";
 import { discoverOpenCodeUrl, invalidateModelCache } from "@/lib/providers/catalog";
-import { resourceQueue } from "@/lib/queue/resource-manager";
-import type { FactorySettings } from "@/lib/types";
+import { resourceQueue } from "@/lib/runtime/queue/resource-manager";
+import type { FactorySettings } from "@/lib/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

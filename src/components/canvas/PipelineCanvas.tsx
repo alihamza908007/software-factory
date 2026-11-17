@@ -30,10 +30,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
-import { defaultCanvasTopology, validateCanvasTopology } from "@/lib/canvas/topology";
-import type { CanvasNodeData, CanvasTopology } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { useFactory } from "@/lib/data/store";
+import { defaultCanvasTopology, validateCanvasTopology } from "@/lib/pipeline/topology";
+import type { CanvasNodeData, CanvasTopology } from "@/lib/core/types";
+import { cn } from "@/lib/core/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";

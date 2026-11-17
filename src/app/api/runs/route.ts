@@ -1,8 +1,8 @@
-import { apiError, json } from "@/lib/api";
-import { getActiveTopology, listAgents, listProjects, listRuns } from "@/lib/db";
-import { startRun } from "@/lib/orchestrator/engine";
-import { validateCanvasTopology } from "@/lib/canvas/topology";
-import type { CanvasTopology } from "@/lib/types";
+import { apiError, json } from "@/lib/core/api";
+import { getActiveTopology, listAgents, listProjects, listRuns } from "@/lib/data/db";
+import { startRun } from "@/lib/pipeline/engine";
+import { validateCanvasTopology } from "@/lib/pipeline/topology";
+import type { CanvasTopology } from "@/lib/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

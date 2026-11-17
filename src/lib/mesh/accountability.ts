@@ -1,8 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import type { Agent } from "../types";
-import { uid } from "../utils";
-import { meshBus } from "./event-bus";
+import type { Agent } from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
+import { meshBus } from "@/lib/mesh/event-bus";
 
 export type TaskContractStatus =
   | "PENDING_ACCEPTANCE"

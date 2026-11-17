@@ -1,4 +1,4 @@
-import { apiError, json, readJson } from "@/lib/api";
+import { apiError, json, readJson } from "@/lib/core/api";
 import {
   clearMeshControls,
   getControlSnapshot,

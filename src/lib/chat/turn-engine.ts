@@ -8,16 +8,16 @@ import {
   getThread,
   listAgents,
   updateThreadMessage,
-} from "@/lib/db";
+} from "@/lib/data/db";
 import { generateWithAgent } from "@/lib/providers/router";
-import { chatPrompt, handoffPrompt } from "@/lib/orchestrator/prompts";
-import { correctiveInstruction, resetGuardrailTrace, validateAgentHandoff } from "@/lib/orchestrator/guardrails";
-import { parseMentions, readJson, sseChunk, sseHeaders } from "@/lib/api";
-import { startRun } from "@/lib/orchestrator/engine";
-import { applyFileBlocks, parseFileBlocks } from "@/lib/orchestrator/parse";
-import type { Agent, ChatMessage, ChatThread } from "@/lib/types";
-import { readProjectFile, listWorkspaceFiles } from "@/lib/workspace";
-import { uid } from "@/lib/utils";
+import { chatPrompt, handoffPrompt } from "@/lib/pipeline/prompts";
+import { correctiveInstruction, resetGuardrailTrace, validateAgentHandoff } from "@/lib/pipeline/guardrails";
+import { parseMentions, readJson, sseChunk, sseHeaders } from "@/lib/core/api";
+import { startRun } from "@/lib/pipeline/engine";
+import { applyFileBlocks, parseFileBlocks } from "@/lib/pipeline/parse";
+import type { Agent, ChatMessage, ChatThread } from "@/lib/core/types";
+import { readProjectFile, listWorkspaceFiles } from "@/lib/data/workspace";
+import { uid } from "@/lib/core/utils";
 import { isAgentPaused } from "@/lib/mesh/controls";
 import {
   hydrateMeshEvents,
@@ -33,7 +33,7 @@ import { acceptTask, createTaskContract, routeTask, scopeHandoffCapabilities } f
 import { negotiateTaskOwnership } from "@/lib/mesh/negotiation";
 import { compactAgentContext, compactConversationHistory, resolveHandoffContext, tokenBudgetForTask } from "@/lib/mesh/context-manager";
 import { resolveAgentHandles } from "@/lib/mesh/router";
-import { validateCanvasTopology } from "@/lib/canvas/topology";
+import { validateCanvasTopology } from "@/lib/pipeline/topology";
 
 
 async function projectContext(projectId?: string): Promise<string | undefined> {

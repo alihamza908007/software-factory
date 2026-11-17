@@ -32,7 +32,7 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
+import { useFactory } from "@/lib/data/store";
 import type {
   DeadLoopInfo,
   GuardrailResult,
@@ -40,9 +40,9 @@ import type {
   PhaseState,
   Run,
   RunStatus,
-} from "@/lib/types";
-import { PHASES, SDLC_PHASE_META } from "@/lib/constants";
-import { cn, formatDuration, formatMB, timeAgo, truncate } from "@/lib/utils";
+} from "@/lib/core/types";
+import { PHASES, SDLC_PHASE_META } from "@/lib/core/constants";
+import { cn, formatDuration, formatMB, timeAgo, truncate } from "@/lib/core/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusPill } from "@/components/shared/status";
 import { AgentAvatar } from "@/components/shared/agent-avatar";

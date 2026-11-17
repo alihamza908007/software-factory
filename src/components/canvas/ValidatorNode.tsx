@@ -2,7 +2,7 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { CheckCircle2, Loader2, ShieldCheck, XCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/core/utils";
 import type { ValidatorFlowNode } from "./types";
 
 export function ValidatorNode({ data, selected }: NodeProps<ValidatorFlowNode>) {

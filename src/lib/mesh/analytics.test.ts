@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { handleEvent, ensureAnalyticsRuntime, getAgentAnalytics, recordPostFlightResult, load } from "@/lib/mesh/analytics";
 import { meshBus } from "@/lib/mesh/event-bus";
-import type { MeshEvent } from "@/lib/types";
+import type { MeshEvent } from "@/lib/core/types";
 
 describe("analytics dedupe", () => {
   beforeEach(async () => {

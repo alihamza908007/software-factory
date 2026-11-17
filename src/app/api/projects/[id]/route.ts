@@ -1,7 +1,7 @@
-import { apiError, json } from "@/lib/api";
-import { deleteProject, getProject, listRuns } from "@/lib/db";
-import { listWorkspaceFiles } from "@/lib/workspace";
-import { removeProjectShortcut } from "@/lib/desktop";
+import { apiError, json } from "@/lib/core/api";
+import { deleteProject, getProject, listRuns } from "@/lib/data/db";
+import { listWorkspaceFiles } from "@/lib/data/workspace";
+import { removeProjectShortcut } from "@/lib/data/desktop";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

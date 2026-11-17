@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
+import { useFactory } from "@/lib/data/store";
 import type {
   Agent,
   ChatMessage,
@@ -12,7 +12,7 @@ import type {
   Run,
   ValidationFinding,
   ValidationReport,
-} from "@/lib/types";
+} from "@/lib/core/types";
 
 export interface ThreadSummary {
   id: string;

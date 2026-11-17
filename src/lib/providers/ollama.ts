@@ -1,6 +1,6 @@
-import type { ModelInfo } from "../types";
-import { getSettings } from "../db";
-import { getHardwareProfile } from "../system/hardware-profiler";
+import type { ModelInfo } from "@/lib/core/types";
+import { getSettings } from "@/lib/data/db";
+import { getHardwareProfile } from "@/lib/runtime/system/hardware-profiler";
 
 export interface ProviderMessage {
   role: "system" | "user" | "assistant";

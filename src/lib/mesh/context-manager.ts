@@ -1,6 +1,6 @@
-import { parseFileBlocks } from "../orchestrator/parse";
-import { putScratchpadContent } from "../system/storage-cleaner";
-import { readCachedWorkspaceFile, setCachedWorkspaceMetadata } from "./shared-cache";
+import { parseFileBlocks } from "@/lib/pipeline/parse";
+import { putScratchpadContent } from "@/lib/runtime/system/storage-cleaner";
+import { readCachedWorkspaceFile, setCachedWorkspaceMetadata } from "@/lib/mesh/shared-cache";
 
 export interface CompactAgentContext {
   summary: string;

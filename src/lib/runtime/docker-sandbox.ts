@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
-import { getProject, WORKSPACES_ROOT } from "../db";
-import type { CommandResult } from "../types";
+import { getProject, WORKSPACES_ROOT } from "@/lib/data/db";
+import type { CommandResult } from "@/lib/core/types";
 
 /**
  * Enterprise-Grade Docker Sandbox Isolation.

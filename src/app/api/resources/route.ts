@@ -1,5 +1,5 @@
-import { apiError, json } from "@/lib/api";
-import { resourceQueue } from "@/lib/queue/resource-manager";
+import { apiError, json } from "@/lib/core/api";
+import { resourceQueue } from "@/lib/runtime/queue/resource-manager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

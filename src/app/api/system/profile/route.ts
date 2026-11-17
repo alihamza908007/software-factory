@@ -1,6 +1,6 @@
-import { json } from "@/lib/api";
-import { getHardwareProfile } from "@/lib/system/hardware-profiler";
-import { resourceQueue } from "@/lib/queue/resource-manager";
+import { json } from "@/lib/core/api";
+import { getHardwareProfile } from "@/lib/runtime/system/hardware-profiler";
+import { resourceQueue } from "@/lib/runtime/queue/resource-manager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

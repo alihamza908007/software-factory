@@ -25,9 +25,9 @@ import {
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
-import type { FactorySettings, ProviderHealth } from "@/lib/types";
-import { cn, formatMB } from "@/lib/utils";
+import { useFactory } from "@/lib/data/store";
+import type { FactorySettings, ProviderHealth } from "@/lib/core/types";
+import { cn, formatMB } from "@/lib/core/utils";
 import { PageHeader, SectionLabel } from "@/components/shared/page-header";
 import { Metric } from "@/components/shared/metric";
 import { ModelSelect } from "@/components/agents/model-select";

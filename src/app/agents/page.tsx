@@ -20,10 +20,10 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
-import type { Agent, AgentMetric } from "@/lib/types";
-import { AGENT_PALETTE } from "@/lib/constants";
-import { cn, formatCost, formatDuration, formatMB, formatTokens, timeAgo } from "@/lib/utils";
+import { useFactory } from "@/lib/data/store";
+import type { Agent, AgentMetric } from "@/lib/core/types";
+import { AGENT_PALETTE } from "@/lib/core/constants";
+import { cn, formatCost, formatDuration, formatMB, formatTokens, timeAgo } from "@/lib/core/utils";
 import { PageHeader, SectionLabel } from "@/components/shared/page-header";
 import { AgentAvatar, AgentIcon } from "@/components/shared/agent-avatar";
 import { ModelBadge } from "@/components/shared/model-badge";

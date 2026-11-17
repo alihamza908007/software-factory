@@ -19,9 +19,9 @@ import {
   Wrench,
   Zap,
 } from "lucide-react";
-import { useFactory } from "@/lib/store";
-import { cn, formatCost, formatDuration, formatMB, formatTokens, timeAgo, truncate } from "@/lib/utils";
-import { SDLC_PHASE_META } from "@/lib/constants";
+import { useFactory } from "@/lib/data/store";
+import { cn, formatCost, formatDuration, formatMB, formatTokens, timeAgo, truncate } from "@/lib/core/utils";
+import { SDLC_PHASE_META } from "@/lib/core/constants";
 import { launchRunDialog } from "@/components/shared/run-launcher";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

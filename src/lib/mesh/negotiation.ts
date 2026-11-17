@@ -1,12 +1,12 @@
-import type { Agent, NegotiationMessage } from "../types";
-import { uid } from "../utils";
+import type { Agent, NegotiationMessage } from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
 import {
   agentCapabilities,
   capabilityScore,
   inferRequiredCapabilities,
-} from "./accountability";
-import { meshBus } from "./event-bus";
-import { recordTaskNegotiation, type NegotiationState } from "./negotiator";
+} from "@/lib/mesh/accountability";
+import { meshBus } from "@/lib/mesh/event-bus";
+import { recordTaskNegotiation, type NegotiationState } from "@/lib/mesh/negotiator";
 
 export interface TaskNegotiationInput {
   objective: string;

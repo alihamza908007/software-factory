@@ -2,7 +2,7 @@
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { GitBranch, Loader2, XCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/core/utils";
 import type { RouterFlowNode } from "./types";
 
 export function RouterNode({ data, selected }: NodeProps<RouterFlowNode>) {

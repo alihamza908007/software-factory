@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { ProviderMessage, ProviderResult } from "./ollama";
-import type { ModelInfo } from "../types";
+import type { ProviderMessage, ProviderResult } from "@/lib/providers/ollama";
+import type { ModelInfo } from "@/lib/core/types";
 
 function buildPrompt(messages: ProviderMessage[]): string {
   const system = messages

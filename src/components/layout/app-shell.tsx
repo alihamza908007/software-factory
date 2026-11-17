@@ -23,8 +23,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { cn, formatMB } from "@/lib/utils";
-import { useFactory } from "@/lib/store";
+import { cn, formatMB } from "@/lib/core/utils";
+import { useFactory } from "@/lib/data/store";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";

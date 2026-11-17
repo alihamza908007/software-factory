@@ -1,6 +1,6 @@
-import type { Agent } from "../types";
-import { agentCapabilities, routeTask } from "./accountability";
-import { publishMeshEvent } from "./event-bus";
+import type { Agent } from "@/lib/core/types";
+import { agentCapabilities, routeTask } from "@/lib/mesh/accountability";
+import { publishMeshEvent } from "@/lib/mesh/event-bus";
 
 export interface AgentRosterEntry {
   handle: `@${string}`;

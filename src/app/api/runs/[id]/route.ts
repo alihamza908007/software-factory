@@ -1,7 +1,7 @@
-import { apiError, json } from "@/lib/api";
-import { getRun } from "@/lib/db";
-import { cancelRun, isRunActive, rerunPhase, resumeRun } from "@/lib/orchestrator/engine";
-import type { PhaseId } from "@/lib/types";
+import { apiError, json } from "@/lib/core/api";
+import { getRun } from "@/lib/data/db";
+import { cancelRun, isRunActive, rerunPhase, resumeRun } from "@/lib/pipeline/engine";
+import type { PhaseId } from "@/lib/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

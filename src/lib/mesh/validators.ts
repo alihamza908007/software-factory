@@ -1,12 +1,12 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { listModels } from "../providers/catalog";
-import { generateWithAgent } from "../providers/router";
-import { getAgent, getProject } from "../db";
-import { runServerHealthProbe, runTerminalCommand, type RuntimeCommandEvent } from "../runtime/sandbox";
-import type { RuntimeProof, TaskContract } from "./accountability";
-import type { CommandResult } from "../types";
+import { listModels } from "@/lib/providers/catalog";
+import { generateWithAgent } from "@/lib/providers/router";
+import { getAgent, getProject } from "@/lib/data/db";
+import { runServerHealthProbe, runTerminalCommand, type RuntimeCommandEvent } from "@/lib/runtime/sandbox";
+import type { RuntimeProof, TaskContract } from "@/lib/mesh/accountability";
+import type { CommandResult } from "@/lib/core/types";
 import type {
   Agent,
   HandoffSummary,
@@ -14,14 +14,14 @@ import type {
   ModelInfo,
   ValidationFinding,
   ValidationReport,
-} from "../types";
-import { uid } from "../utils";
-import { appendConstraint } from "./agent-memory";
-import { inferResolutionPath, meshBus, publishAgentEnvelope, setMeshAgentStatus } from "./event-bus";
-import { listWorkspaceFiles, resolveInside } from "../workspace";
-import { completeTaskStorage, ensureStorageLifecycle } from "../system/storage-cleaner";
-import { ensureAnalyticsRuntime, recordContribution, recordPostFlightResult } from "./analytics";
-import { sharedCache } from "./shared-cache";
+} from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
+import { appendConstraint } from "@/lib/mesh/agent-memory";
+import { inferResolutionPath, meshBus, publishAgentEnvelope, setMeshAgentStatus } from "@/lib/mesh/event-bus";
+import { listWorkspaceFiles, resolveInside } from "@/lib/data/workspace";
+import { completeTaskStorage, ensureStorageLifecycle } from "@/lib/runtime/system/storage-cleaner";
+import { ensureAnalyticsRuntime, recordContribution, recordPostFlightResult } from "@/lib/mesh/analytics";
+import { sharedCache } from "@/lib/mesh/shared-cache";
 
 export interface ValidationArtifact {
   path: string;

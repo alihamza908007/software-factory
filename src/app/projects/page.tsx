@@ -20,9 +20,9 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
-import type { Project, Run } from "@/lib/types";
-import { cn, formatDuration, timeAgo, truncate } from "@/lib/utils";
+import { useFactory } from "@/lib/data/store";
+import type { Project, Run } from "@/lib/core/types";
+import { cn, formatDuration, timeAgo, truncate } from "@/lib/core/utils";
 import { PageHeader, SectionLabel } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusPill } from "@/components/shared/status";

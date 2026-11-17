@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowRight, GitPullRequest, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-import { useFactory } from "@/lib/store";
+import { useFactory } from "@/lib/data/store";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import type { Project } from "@/lib/types";
+import type { Project } from "@/lib/core/types";
 
 const LAUNCH_EVENT = "factory:launch-run";
 

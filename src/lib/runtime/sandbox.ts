@@ -2,10 +2,10 @@ import { realpath, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import path from "node:path";
-import { getProject, getSettings, WORKSPACES_ROOT } from "../db";
-import type { CommandResult } from "../types";
-import { runCommand } from "../tools/terminal";
-import type { RuntimeProof } from "../mesh/accountability";
+import { getProject, getSettings, WORKSPACES_ROOT } from "@/lib/data/db";
+import type { CommandResult } from "@/lib/core/types";
+import { runCommand } from "@/lib/runtime/tools/terminal";
+import type { RuntimeProof } from "@/lib/mesh/accountability";
 
 export interface RuntimeCommandEvent {
   stream: "stdout" | "stderr";

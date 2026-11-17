@@ -1,7 +1,7 @@
-import { readJson, sseChunk, sseHeaders } from "@/lib/api";
-import { createThread, getThread } from "@/lib/db";
-import type { ChatThread } from "@/lib/types";
-import { uid } from "@/lib/utils";
+import { readJson, sseChunk, sseHeaders } from "@/lib/core/api";
+import { createThread, getThread } from "@/lib/data/db";
+import type { ChatThread } from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
 import { runChatTurn, type ChatBody } from "@/lib/chat/turn-engine";
 
 export const runtime = "nodejs";

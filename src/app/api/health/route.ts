@@ -1,10 +1,10 @@
 import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { apiError, json } from "@/lib/api";
-import { getSettings } from "@/lib/db";
+import { apiError, json } from "@/lib/core/api";
+import { getSettings } from "@/lib/data/db";
 import { listModels, opencodeFetch } from "@/lib/providers/catalog";
-import { resourceQueue } from "@/lib/queue/resource-manager";
+import { resourceQueue } from "@/lib/runtime/queue/resource-manager";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

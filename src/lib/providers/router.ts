@@ -1,13 +1,13 @@
-import { appendMetric, getAgent, getSettings, listAgents } from "../db";
-import { resourceQueue } from "../queue/resource-manager";
-import type { Agent, AgentMetric, ModelInfo, ResourceReservation } from "../types";
-import { uid } from "../utils";
-import { getModel } from "./catalog";
-import type { ProviderMessage, ProviderResult } from "./ollama";
-import { executeLLMCall } from "../llm/universal-provider";
-import { injectAgentMemory } from "../mesh/agent-memory";
-import { recordTokenUsage } from "../mesh/analytics";
-import { agentRosterPrompt } from "../mesh/router";
+import { appendMetric, getAgent, getSettings, listAgents } from "@/lib/data/db";
+import { resourceQueue } from "@/lib/runtime/queue/resource-manager";
+import type { Agent, AgentMetric, ModelInfo, ResourceReservation } from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
+import { getModel } from "@/lib/providers/catalog";
+import type { ProviderMessage, ProviderResult } from "@/lib/providers/ollama";
+import { executeLLMCall } from "@/lib/providers/universal-provider";
+import { injectAgentMemory } from "@/lib/mesh/agent-memory";
+import { recordTokenUsage } from "@/lib/mesh/analytics";
+import { agentRosterPrompt } from "@/lib/mesh/router";
 
 const circuitState = new Map<string, { failures: number; openUntil: number }>();
 const CIRCUIT_THRESHOLD = 3;
@@ -320,7 +320,7 @@ export async function generateWithAgent(options: GenerateOptions): Promise<Gener
 
 export async function pickModelForRole(roleHint: string): Promise<ModelInfo | undefined> {
   const settings = await getSettings();
-  const { models } = await import("./catalog").then((module) => module.listModels());
+  const { models } = await import("@/lib/providers/catalog").then((module) => module.listModels());
   const offline = models.find(
     (model) =>
       model.provider === "opencode" &&

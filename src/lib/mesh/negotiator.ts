@@ -1,13 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DATA_ROOT, getAgent, getProject, listAgents } from "../db";
-import { generateWithAgent } from "../providers/router";
-import { applyFileBlocks, parseFileBlocks } from "../orchestrator/parse";
-import type { Agent, NegotiationMessage, Project } from "../types";
-import { uid } from "../utils";
-import { appendConstraint } from "./agent-memory";
-import { inferResolutionPath, meshBus, publishAgentEnvelope, setMeshAgentStatus } from "./event-bus";
-import { listWorkspaceFiles } from "../workspace";
+import { DATA_ROOT, getAgent, getProject, listAgents } from "@/lib/data/db";
+import { generateWithAgent } from "@/lib/providers/router";
+import { applyFileBlocks, parseFileBlocks } from "@/lib/pipeline/parse";
+import type { Agent, NegotiationMessage, Project } from "@/lib/core/types";
+import { uid } from "@/lib/core/utils";
+import { appendConstraint } from "@/lib/mesh/agent-memory";
+import { inferResolutionPath, meshBus, publishAgentEnvelope, setMeshAgentStatus } from "@/lib/mesh/event-bus";
+import { listWorkspaceFiles } from "@/lib/data/workspace";
 
 export interface NegotiationRequest {
   leftAgentId: string;

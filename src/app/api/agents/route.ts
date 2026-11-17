@@ -1,8 +1,8 @@
-import { apiError, json } from "@/lib/api";
-import { listAgents, listMetrics, saveAgent } from "@/lib/db";
-import type { Agent } from "@/lib/types";
-import { AGENT_PALETTE } from "@/lib/constants";
-import { slugify, uid } from "@/lib/utils";
+import { apiError, json } from "@/lib/core/api";
+import { listAgents, listMetrics, saveAgent } from "@/lib/data/db";
+import type { Agent } from "@/lib/core/types";
+import { AGENT_PALETTE } from "@/lib/core/constants";
+import { slugify, uid } from "@/lib/core/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

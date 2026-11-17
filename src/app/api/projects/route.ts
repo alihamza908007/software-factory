@@ -1,9 +1,9 @@
-import { apiError, json } from "@/lib/api";
-import { listProjects, listRuns, saveProject } from "@/lib/db";
-import type { Project } from "@/lib/types";
-import { scaffoldProject, workspacePathFor } from "@/lib/workspace";
-import { createProjectShortcut } from "@/lib/desktop";
-import { slugify, uid } from "@/lib/utils";
+import { apiError, json } from "@/lib/core/api";
+import { listProjects, listRuns, saveProject } from "@/lib/data/db";
+import type { Project } from "@/lib/core/types";
+import { scaffoldProject, workspacePathFor } from "@/lib/data/workspace";
+import { createProjectShortcut } from "@/lib/data/desktop";
+import { slugify, uid } from "@/lib/core/utils";
 import { promises as fs } from "node:fs";
 
 export const runtime = "nodejs";

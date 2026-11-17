@@ -1,8 +1,8 @@
-import { apiError, json } from "@/lib/api";
-import { getSettings } from "@/lib/db";
-import { probeProvider } from "@/lib/llm/universal-provider";
+import { apiError, json } from "@/lib/core/api";
+import { getSettings } from "@/lib/data/db";
+import { probeProvider } from "@/lib/providers/universal-provider";
 import { listModels } from "@/lib/providers/catalog";
-import type { ModelProvider, ProviderHealth } from "@/lib/types";
+import type { ModelProvider, ProviderHealth } from "@/lib/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
