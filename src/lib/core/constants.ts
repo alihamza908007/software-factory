@@ -104,23 +104,40 @@ export const DEFAULT_SETTINGS: FactorySettings = {
 };
 
 export const AGENT_PALETTE = [
-  "#c8f169",
-  "#6fe7dd",
-  "#f5b544",
-  "#ff8fab",
-  "#a78bfa",
-  "#7dd3fc",
-  "#fca5a5",
-  "#bef264",
+  "#6f8f72",
+  "#6b8a9e",
+  "#b08968",
+  "#a9738a",
+  "#8377a8",
+  "#7d9aa8",
+  "#b58b7a",
+  "#8a9a6f",
 ];
 
 export const AGENT_COLORS: Record<string, string> = {
-  spec: "#c8f169",
-  architect: "#6fe7dd",
-  developer: "#f5b544",
-  qa: "#ff8fab",
-  devops: "#a78bfa",
+  spec: "#6f8f72",
+  architect: "#6b8a9e",
+  developer: "#b08968",
+  qa: "#a9738a",
+  devops: "#8377a8",
 };
+
+/** Maps the original neon palette to the muted palette so persisted agents follow the theme. */
+const LEGACY_AGENT_COLORS: Record<string, string> = {
+  "#c8f169": "#6f8f72",
+  "#6fe7dd": "#6b8a9e",
+  "#f5b544": "#b08968",
+  "#ff8fab": "#a9738a",
+  "#a78bfa": "#8377a8",
+  "#7dd3fc": "#7d9aa8",
+  "#fca5a5": "#b58b7a",
+  "#bef264": "#8a9a6f",
+};
+
+export function normalizeAgentColor(color?: string): string {
+  if (!color) return AGENT_COLORS.spec;
+  return LEGACY_AGENT_COLORS[color.toLowerCase()] ?? color;
+}
 
 export function defaultAgents(heavyModel: string, lightModel: string): Agent[] {
   const now = Date.now();
@@ -237,9 +254,9 @@ export const SDLC_PHASE_META: Record<
   PhaseId,
   { label: string; short: string; accent: string; index: number }
 > = {
-  requirements: { label: "Requirements", short: "SPEC", accent: "#c8f169", index: 1 },
-  architecture: { label: "Architecture", short: "ARCH", accent: "#6fe7dd", index: 2 },
-  implementation: { label: "Implementation", short: "BUILD", accent: "#f5b544", index: 3 },
-  testing: { label: "Test & Heal", short: "TEST", accent: "#ff8fab", index: 4 },
-  deployment: { label: "Deploy & CI", short: "SHIP", accent: "#a78bfa", index: 5 },
+  requirements: { label: "Requirements", short: "SPEC", accent: "#6f8f72", index: 1 },
+  architecture: { label: "Architecture", short: "ARCH", accent: "#6b8a9e", index: 2 },
+  implementation: { label: "Implementation", short: "BUILD", accent: "#b08968", index: 3 },
+  testing: { label: "Test & Heal", short: "TEST", accent: "#a9738a", index: 4 },
+  deployment: { label: "Deploy & CI", short: "SHIP", accent: "#8377a8", index: 5 },
 };

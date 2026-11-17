@@ -5,7 +5,7 @@ const RUN_STYLES: Record<RunStatus, { label: string; className: string; dot: str
   queued: { label: "Queued", className: "text-muted-foreground", dot: "bg-muted-foreground" },
   running: { label: "Running", className: "text-factory-lime", dot: "bg-factory-lime animate-pulse" },
   passed: { label: "Passed", className: "text-factory-lime", dot: "bg-factory-lime" },
-  failed: { label: "Failed", className: "text-red-300", dot: "bg-factory-red" },
+  failed: { label: "Failed", className: "text-destructive", dot: "bg-factory-red" },
   cancelled: { label: "Cancelled", className: "text-muted-foreground", dot: "bg-muted-foreground" },
   interrupted: { label: "Interrupted", className: "text-factory-amber", dot: "bg-factory-amber" },
   recoverable_paused: { label: "Paused · recoverable", className: "text-factory-amber", dot: "bg-factory-amber" },
@@ -15,7 +15,7 @@ const PHASE_STYLES: Record<PhaseStatus, { label: string; className: string; dot:
   pending: { label: "Pending", className: "text-muted-foreground", dot: "bg-muted-foreground" },
   running: { label: "Running", className: "text-factory-lime", dot: "bg-factory-lime animate-pulse" },
   passed: { label: "Passed", className: "text-factory-lime", dot: "bg-factory-lime" },
-  failed: { label: "Failed", className: "text-red-300", dot: "bg-factory-red" },
+  failed: { label: "Failed", className: "text-destructive", dot: "bg-factory-red" },
   skipped: { label: "Skipped", className: "text-factory-amber", dot: "bg-factory-amber" },
 };
 
@@ -35,7 +35,7 @@ export function StatusPill({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border border-current/20 bg-secondary/50 px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider",
+        "inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2 py-0.5 text-[11px] font-medium",
         style.className,
         className,
       )}

@@ -37,7 +37,7 @@ export function ModelBadge({
   return (
     <span
       className={cn(
-        "inline-flex max-w-full items-center gap-1.5 rounded-md border px-1.5 py-1 font-mono text-[10px]",
+        "inline-flex max-w-full items-center gap-1.5 rounded-md border px-1.5 py-1 font-mono text-xs",
         isLocal
           ? "border-factory-amber/25 bg-factory-amber/5 text-factory-amber"
           : "border-factory-cyan/25 bg-factory-cyan/5 text-factory-cyan",
@@ -47,7 +47,7 @@ export function ModelBadge({
     >
       <ProviderIcon provider={provider} />
       <span className="truncate">{name}</span>
-      {!compact && model?.heavy && <span className="text-[8px] opacity-70">HEAVY</span>}
+      {!compact && model?.heavy && <span className="text-[10px] opacity-70">HEAVY</span>}
     </span>
   );
 }

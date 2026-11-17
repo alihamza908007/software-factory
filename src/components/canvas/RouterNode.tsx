@@ -22,14 +22,14 @@ export function RouterNode({ data, selected }: NodeProps<RouterFlowNode>) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-medium">{data.label}</div>
-          <div className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+          <div className="font-mono text-[10px] tracking-wide text-muted-foreground">
             router
           </div>
         </div>
         {data.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-factory-amber" />}
         {data.status === "failed" && <XCircle className="h-3 w-3 text-factory-red" />}
       </div>
-      <div className="px-3 py-2.5 font-mono text-[9px] leading-relaxed text-factory-amber/90">
+      <div className="px-3 py-2.5 font-mono text-[11px] leading-relaxed text-factory-amber/90">
         {data.condition || "score>=70"}
       </div>
       <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-factory-amber !bg-factory-amber" />

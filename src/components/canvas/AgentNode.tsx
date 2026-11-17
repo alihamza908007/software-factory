@@ -30,43 +30,43 @@ export function AgentNode({ data, selected }: NodeProps<AgentFlowNode>) {
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-medium">{data.label}</div>
-          <div className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+          <div className="font-mono text-[10px] tracking-wide text-muted-foreground">
             agent node
           </div>
         </div>
         {statusIcon(data.status)}
       </div>
       <div className="space-y-2 px-3 py-2.5">
-        <div className="flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
           {local ? <Cpu className="h-3 w-3 text-factory-amber" /> : <Cloud className="h-3 w-3 text-factory-cyan" />}
           <span className="truncate">{data.modelKey ?? "model inherited from agent"}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="rounded border border-border/70 bg-secondary/50 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+          <span className="rounded border border-border/70 bg-secondary/50 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-muted-foreground">
             {data.provider ?? "auto"}
           </span>
           {typeof data.guardrailScore === "number" && (
-            <span className="rounded border border-factory-lime/20 bg-factory-lime/5 px-1.5 py-0.5 font-mono text-[8px] text-factory-lime">
+            <span className="rounded border border-factory-lime/20 bg-factory-lime/5 px-1.5 py-0.5 font-mono text-[10px] text-factory-lime">
               {data.guardrailScore}/100
             </span>
           )}
-          <span className="ml-auto truncate font-mono text-[8px] text-muted-foreground/70">
+          <span className="ml-auto truncate font-mono text-[10px] text-muted-foreground/70">
             {data.status ?? "idle"}
           </span>
         </div>
         {data.detail && (
-          <div className="line-clamp-2 rounded bg-secondary/50 px-2 py-1 text-[9px] leading-relaxed text-muted-foreground">
+          <div className="line-clamp-2 rounded bg-secondary/50 px-2 py-1 text-[11px] leading-relaxed text-muted-foreground">
             {data.detail}
           </div>
         )}
         {(data.durationMs || data.tokens) && (
-          <div className="flex items-center gap-2 font-mono text-[8px] text-muted-foreground">
+          <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
             {data.durationMs ? <span>{Math.round(data.durationMs)} ms</span> : null}
             {data.tokens ? <span>{data.tokens} tok</span> : null}
           </div>
         )}
         {data.error && (
-          <div className="line-clamp-2 rounded border border-red-400/20 bg-red-400/5 px-2 py-1 text-[8px] leading-relaxed text-red-300">
+          <div className="line-clamp-2 rounded border border-destructive/20 bg-destructive/5 px-2 py-1 text-[10px] leading-relaxed text-destructive">
             {data.error}
           </div>
         )}

@@ -47,11 +47,11 @@ export function AgentAvatar({
   icon?: string;
   className?: string;
 }) {
-  const dims = size === "sm" ? "h-6 w-6 text-[9px]" : size === "lg" ? "h-10 w-10 text-sm" : "h-8 w-8 text-[11px]";
+  const dims = size === "sm" ? "h-6 w-6 text-[11px]" : size === "lg" ? "h-10 w-10 text-sm" : "h-8 w-8 text-[11px]";
   return (
     <span
       className={cn(
-        "relative flex shrink-0 items-center justify-center rounded-full font-mono font-bold text-black",
+        "relative flex shrink-0 items-center justify-center rounded-full font-semibold text-white",
         dims,
         className,
       )}
@@ -59,7 +59,6 @@ export function AgentAvatar({
       title={name}
     >
       {icon ? <AgentIcon name={icon} className={size === "sm" ? "h-3 w-3" : "h-4 w-4"} /> : name.slice(0, 2).toUpperCase()}
-      <span className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/20" />
     </span>
   );
 }

@@ -70,8 +70,8 @@ function toFlowEdges(topology: CanvasTopology): Edge[] {
     label: edge.label,
     animated: edge.animated ?? true,
     markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
-    style: { stroke: edge.label === "fail" ? "#f87171" : "#6fe7dd", strokeWidth: 1.4 },
-    labelStyle: { fill: "#a9b4ad", fontSize: 9, fontFamily: "monospace" },
+    style: { stroke: edge.label === "fail" ? "#b4544f" : "#6b8a9e", strokeWidth: 1.4 },
+    labelStyle: { fill: "hsl(var(--muted-foreground))", fontSize: 10, fontFamily: "monospace" },
   }));
 }
 
@@ -212,7 +212,7 @@ export function PipelineCanvas() {
             label,
             animated: true,
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14 },
-            style: { stroke: label === "fail" ? "#f87171" : "#6fe7dd", strokeWidth: 1.4 },
+            style: { stroke: label === "fail" ? "#b4544f" : "#6b8a9e", strokeWidth: 1.4 },
           },
           current,
         ),
@@ -513,7 +513,7 @@ export function PipelineCanvas() {
     <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
       <div className="panel overflow-hidden">
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-2.5 py-2">
-          <span className="mr-1 font-mono text-[9px] uppercase tracking-[0.16em] text-factory-cyan">
+          <span className="mr-1 font-mono text-[11px] tracking-wide text-factory-cyan">
             Canvas DAG
           </span>
           <Button variant="outline" size="sm" onClick={() => addNode("agent")} disabled={busy}>
@@ -571,7 +571,7 @@ export function PipelineCanvas() {
                         ? {
                             ...edge,
                             label: next,
-                            style: { ...edge.style, stroke: next === "fail" ? "#f87171" : "#6fe7dd" },
+                            style: { ...edge.style, stroke: next === "fail" ? "#b4544f" : "#6b8a9e" },
                           }
                         : edge,
                     ),
@@ -591,9 +591,9 @@ export function PipelineCanvas() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-secondary/50 px-2.5 py-2">
-          <span className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">Run context</span>
+          <span className="font-mono text-[10px] tracking-wide text-muted-foreground">Run context</span>
           <Select value={projectId} onValueChange={setProjectId}>
-            <SelectTrigger className="h-7 w-[170px] text-[10px]">
+            <SelectTrigger className="h-7 w-[170px] text-xs">
               <SelectValue placeholder="No project workspace" />
             </SelectTrigger>
             <SelectContent>
@@ -608,9 +608,9 @@ export function PipelineCanvas() {
             value={brief}
             onChange={(event) => setBrief(event.target.value)}
             placeholder="Build brief for the first node (optional)"
-            className="h-7 min-w-[220px] flex-1 text-[10px]"
+            className="h-7 min-w-[220px] flex-1 text-xs"
           />
-          <label className="flex items-center gap-1.5 font-mono text-[8px] text-muted-foreground">
+          <label className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
             write generated files
             <Switch
               checked={applyArtifacts}
@@ -644,21 +644,21 @@ export function PipelineCanvas() {
             proOptions={{ hideAttribution: true }}
             className="bg-background"
           >
-            <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="#223027" />
+            <Background variant={BackgroundVariant.Dots} gap={18} size={1} color="hsl(var(--border))" />
             <Controls className="!border-border !bg-card" />
             <MiniMap
               pannable
               zoomable
               className="!border !border-border !bg-card"
               nodeColor={(node) => {
-                if (node.type === "validator") return "#6fe7dd";
-                if (node.type === "router") return "#f5b544";
-                return "#c8f169";
+                if (node.type === "validator") return "#6b8a9e";
+                if (node.type === "router") return "#b08968";
+                return "#6f8f72";
               }}
             />
           </ReactFlow>
         </div>
-        <div className="flex items-center justify-between border-t border-border/60 px-3 py-2 font-mono text-[9px] text-muted-foreground">
+        <div className="flex items-center justify-between border-t border-border/60 px-3 py-2 font-mono text-[11px] text-muted-foreground">
           <span>
             {savedAt ? `autosaved ${new Date(savedAt).toLocaleTimeString()}` : "unsaved"} · drag handles to connect · click a router edge to toggle pass/fail
           </span>
@@ -736,7 +736,7 @@ export function PipelineCanvas() {
                     <Textarea
                       value={selectedNode.data.prompt ?? ""}
                       onChange={(event) => updateNodeData(selectedNode.id, { prompt: event.target.value })}
-                      className="mt-1 min-h-[110px] font-mono text-[10px]"
+                      className="mt-1 min-h-[110px] font-mono text-xs"
                     />
                   </div>
                 </>
@@ -749,10 +749,10 @@ export function PipelineCanvas() {
                     onChange={(event) =>
                       updateNodeData(selectedNode.id, { assertion: event.target.value })
                     }
-                    className="mt-1 min-h-[90px] font-mono text-[10px]"
+                    className="mt-1 min-h-[90px] font-mono text-xs"
                     placeholder="score>=70 or contains: acceptance criteria"
                   />
-                  <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                     Supports <span className="font-mono">contains:</span>,{" "}
                     <span className="font-mono">regex:</span>,{" "}
                     <span className="font-mono">length&gt;=N</span> and{" "}
@@ -768,10 +768,10 @@ export function PipelineCanvas() {
                     onChange={(event) =>
                       updateNodeData(selectedNode.id, { condition: event.target.value })
                     }
-                    className="mt-1 min-h-[90px] font-mono text-[10px]"
+                    className="mt-1 min-h-[90px] font-mono text-xs"
                     placeholder="score>=70"
                   />
-                  <p className="mt-1 text-[9px] leading-relaxed text-muted-foreground">
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                     Edges labelled <span className="text-factory-lime">pass</span> or{" "}
                     <span className="text-factory-red">fail</span> only continue when the router
                     returns that branch.
@@ -783,7 +783,7 @@ export function PipelineCanvas() {
                 selectedNode.data.error ||
                 selectedNode.data.outputPreview) && (
                 <div className="rounded-md border border-border/60 bg-secondary/50 p-2">
-                  <div className="flex flex-wrap items-center gap-2 font-mono text-[8px] text-muted-foreground">
+                  <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
                     <span>status {selectedNode.data.status ?? "idle"}</span>
                     {selectedNode.data.durationMs ? (
                       <span>{Math.round(selectedNode.data.durationMs)} ms</span>
@@ -794,12 +794,12 @@ export function PipelineCanvas() {
                     )}
                   </div>
                   {selectedNode.data.error && (
-                    <p className="mt-1 break-words font-mono text-[9px] leading-relaxed text-red-300">
+                    <p className="mt-1 break-words font-mono text-[11px] leading-relaxed text-destructive">
                       {selectedNode.data.error}
                     </p>
                   )}
                   {!selectedNode.data.error && selectedNode.data.outputPreview && (
-                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-secondary/50 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+                    <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-secondary/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
                       {selectedNode.data.outputPreview}
                     </pre>
                   )}
@@ -807,7 +807,7 @@ export function PipelineCanvas() {
               )}
             </div>
           ) : (
-            <div className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-[10px] text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-xs text-muted-foreground">
               Select a node to configure it. Drag from the right handle into another node to create
               a payload edge.
             </div>
@@ -821,9 +821,9 @@ export function PipelineCanvas() {
               {(lastValidation ?? canvasValidation)?.errors.length ?? 0} errors
             </Badge>
           </div>
-          <div className="space-y-1 text-[9px] leading-relaxed">
+          <div className="space-y-1 text-[11px] leading-relaxed">
             {(lastValidation ?? canvasValidation)?.errors.map((error) => (
-              <p key={error} className="rounded border border-red-400/20 bg-red-400/5 px-2 py-1 text-red-300">
+              <p key={error} className="rounded border border-destructive/20 bg-destructive/5 px-2 py-1 text-destructive">
                 {error}
               </p>
             ))}
@@ -860,7 +860,7 @@ export function PipelineCanvas() {
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: agent.color }} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[11px]">{agent.name}</span>
-                  <span className="block truncate font-mono text-[8px] text-muted-foreground">
+                  <span className="block truncate font-mono text-[10px] text-muted-foreground">
                     {agent.role}
                   </span>
                 </span>
@@ -877,14 +877,14 @@ export function PipelineCanvas() {
               variant="ghost"
               size="sm"
               onClick={() => setCanvasLogs([])}
-              className="h-6 px-1.5 font-mono text-[8px]"
+              className="h-6 px-1.5 font-mono text-[10px]"
             >
               clear
             </Button>
           </div>
-          <div className="max-h-[180px] overflow-y-auto rounded border border-border/50 bg-secondary/50 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+          <div className="max-h-[180px] overflow-y-auto rounded border border-border/50 bg-secondary/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
             {canvasLogs.slice(-60).map((line, index) => (
-              <div key={`${index}-${line.slice(0, 12)}`} className={cn(line.includes("[error]") && "text-red-300")}>
+              <div key={`${index}-${line.slice(0, 12)}`} className={cn(line.includes("[error]") && "text-destructive")}>
                 {line}
               </div>
             ))}

@@ -16,6 +16,7 @@ import type {
   Run,
 } from "@/lib/core/types";
 import type { HardwareOptimizationProfile } from "@/lib/runtime/system/hardware-profiler";
+import { normalizeAgentColor } from "@/lib/core/constants";
 
 interface HealthPayload {
   ok: boolean;
@@ -298,7 +299,10 @@ export const useFactory = create<FactoryStore>()(
       fetchAgents: async () => {
         try {
           const data = await getJson<{ agents: Agent[]; metrics: AgentMetric[] }>("/api/agents");
-          set({ agents: data.agents, metrics: data.metrics });
+          set({
+            agents: data.agents.map((agent) => ({ ...agent, color: normalizeAgentColor(agent.color) })),
+            metrics: data.metrics,
+          });
         } catch (error) {
           set({ error: String(error) });
         }
@@ -416,11 +420,12 @@ export const useFactory = create<FactoryStore>()(
           });
           if (!res.ok) throw new Error((await res.json()).error ?? "Could not update agent.");
           const data = (await res.json()) as { agent: Agent };
+          const normalized = { ...data.agent, color: normalizeAgentColor(data.agent.color) };
           set((state) => ({
-            agents: state.agents.map((agent) => (agent.id === data.agent.id ? data.agent : agent)),
+            agents: state.agents.map((agent) => (agent.id === normalized.id ? normalized : agent)),
             error: null,
           }));
-          return data.agent;
+          return normalized;
         } catch (error) {
           set((state) => ({
             agents: state.agents.map((agent) => (agent.id === agentId ? previous : agent)),

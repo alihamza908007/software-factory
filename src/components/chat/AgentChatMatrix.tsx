@@ -48,7 +48,7 @@ const STATUS_META: Record<
   validating: { label: "Validating", color: "text-factory-amber", icon: ShieldCheck },
   executing: { label: "Executing", color: "text-factory-amber", icon: Sparkles },
   paused: { label: "Paused", color: "text-muted-foreground", icon: Pause },
-  error: { label: "Error", color: "text-red-300", icon: CircleAlert },
+  error: { label: "Error", color: "text-destructive", icon: CircleAlert },
 };
 
 function agentFor(agents: Agent[], event: MeshEvent): Agent | undefined {
@@ -66,7 +66,7 @@ function targetAgentFor(agents: Agent[], event: MeshEvent): Agent | undefined {
 }
 
 function severityClass(severity: MeshEvent["severity"]): string {
-  if (severity === "error") return "border-red-400/25 bg-red-400/[0.04]";
+  if (severity === "error") return "border-destructive/25 bg-destructive/[0.04]";
   if (severity === "warning") return "border-factory-amber/25 bg-factory-amber/[0.04]";
   if (severity === "success") return "border-factory-lime/20 bg-factory-lime/[0.03]";
   return "border-border/70 bg-secondary/50";
@@ -95,7 +95,7 @@ export function MeshEventCard({
         <div className="mt-0.5 flex shrink-0 items-center gap-1">
           <AgentAvatar
             name={source?.name ?? event.source}
-            color={source?.color ?? "#f5b544"}
+            color={source?.color ?? "hsl(var(--primary))"}
             icon={source?.icon}
             size="sm"
           />
@@ -114,26 +114,26 @@ export function MeshEventCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[11px] font-medium">{event.title}</span>
-            <span className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+            <span className="font-mono text-[10px] tracking-wide text-muted-foreground">
               {event.type.replaceAll("_", " ")}
             </span>
-            <span className="font-mono text-[8px] text-muted-foreground">{timeAgo(event.at)}</span>
-            {overridden && <Badge variant="outline" className="text-[8px]">operator override</Badge>}
+            <span className="font-mono text-[10px] text-muted-foreground">{timeAgo(event.at)}</span>
+            {overridden && <Badge variant="outline" className="text-[10px]">operator override</Badge>}
             {envelope && <>
-              <Badge variant="outline" className="font-mono text-[8px]">FROM {String(envelope.from ?? event.source)}</Badge>
-              <Badge variant="outline" className="font-mono text-[8px]">TO {String(envelope.to ?? event.target ?? "—")}</Badge>
+              <Badge variant="outline" className="font-mono text-[10px]">FROM {String(envelope.from ?? event.source)}</Badge>
+              <Badge variant="outline" className="font-mono text-[10px]">TO {String(envelope.to ?? event.target ?? "—")}</Badge>
             </>}
           </div>
-          <div className="min-w-0 max-w-full px-1"><p className={cn("mt-1 max-w-full leading-relaxed text-muted-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere]", event.type === "TERMINAL_OUTPUT" && "font-mono text-[9px]")}>
+          <div className="min-w-0 max-w-full px-1"><p className={cn("mt-1 max-w-full leading-relaxed text-muted-foreground whitespace-pre-wrap break-words [overflow-wrap:anywhere]", event.type === "TERMINAL_OUTPUT" && "font-mono text-[11px]")}>
             {event.type === "TERMINAL_OUTPUT" ? `${String(event.payload?.stream ?? "output")}: ${event.message}` : event.message}
           </p></div>
           {typeof event.payload?.resolutionPath === "string" && (
-            <p className="mt-1 rounded-md border border-factory-amber/20 bg-factory-amber/[0.04] px-2 py-1 text-[9px] leading-relaxed text-factory-amber/90 break-words [overflow-wrap:anywhere]">
+            <p className="mt-1 rounded-md border border-factory-amber/20 bg-factory-amber/[0.04] px-2 py-1 text-[11px] leading-relaxed text-factory-amber/90 break-words [overflow-wrap:anywhere]">
               <span className="font-semibold">Resolution:</span> {event.payload.resolutionPath}
             </p>
           )}
           {Array.isArray(event.payload?.fileTree) && event.payload.fileTree.length > 0 && (
-            <details className="mt-1 min-w-0 text-[9px] text-muted-foreground">
+            <details className="mt-1 min-w-0 text-[11px] text-muted-foreground">
               <summary className="cursor-pointer">Workspace snapshot · {event.payload.fileTree.length} files</summary>
               <p className="mt-1 break-all font-mono">{String(event.payload.workspaceRoot ?? "")}</p>
               <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all rounded bg-secondary/50 p-2">{(event.payload.fileTree as string[]).join("\n")}</pre>
@@ -143,7 +143,7 @@ export function MeshEventCard({
             <Button
               size="sm"
               variant="outline"
-              className="mt-2 h-6 px-2 text-[9px]"
+              className="mt-2 h-6 px-2 text-[11px]"
               onClick={onOverride}
             >
               <ShieldCheck className="h-2.5 w-2.5" />
@@ -247,21 +247,21 @@ export function AgentChatMatrix({
             <span className="live-dot" aria-hidden />
             <Waypoints className="h-3.5 w-3.5 shrink-0 text-factory-cyan" />
             <span className="truncate text-xs font-medium">Master Chat Matrix</span>
-            <Badge variant="outline" className="shrink-0 font-mono text-[9px]">{formatTokens(sessionTokens)} tokens</Badge>
+            <Badge variant="outline" className="shrink-0 font-mono text-[11px]">{formatTokens(sessionTokens)} tokens</Badge>
             {threadId && (
-              <span className="font-mono text-[9px] text-muted-foreground">
+              <span className="font-mono text-[11px] text-muted-foreground">
                 {threads.find((thread) => thread.id === threadId)?.title ?? threadId}
               </span>
             )}
           </div>
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-[10px]" onClick={startNewThread}>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={startNewThread}>
             <MessageSquarePlus className="h-3 w-3" />
             New
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-3 py-2">
           <Select value={projectId} onValueChange={setProjectId}>
-            <SelectTrigger className="h-7 w-[180px] text-[10px]">
+            <SelectTrigger className="h-7 w-[180px] text-xs">
               <SelectValue placeholder="No project context" />
             </SelectTrigger>
             <SelectContent>
@@ -272,7 +272,7 @@ export function AgentChatMatrix({
               ))}
             </SelectContent>
           </Select>
-          <label className="ml-auto flex items-center gap-1.5 font-mono text-[8px] text-muted-foreground">
+          <label className="ml-auto flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
             <Rocket className={cn("h-3 w-3", autonomous ? "text-factory-amber" : "text-muted-foreground")} />
             autonomous
             <Switch
@@ -296,7 +296,7 @@ export function AgentChatMatrix({
                     key={agent.id}
                     onClick={() => void toggleAgentPause(agent.id)}
                     className={cn(
-                      "group inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] transition-colors",
+                      "group inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] transition-colors",
                       paused
                         ? "border-factory-amber/30 bg-factory-amber/5"
                         : "border-border/70 bg-secondary/50 hover:border-factory-lime/30",
@@ -341,7 +341,7 @@ export function AgentChatMatrix({
                     <button
                       key={agent.id}
                       onClick={() => setInput((value) => `${value}${value ? " " : ""}@${agent.handle} `)}
-                      className="rounded-full border border-border px-2 py-1 font-mono text-[9px] text-muted-foreground hover:text-foreground"
+                      className="rounded-full border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground hover:text-foreground"
                     >
                       @{agent.handle}
                     </button>
@@ -393,7 +393,7 @@ export function AgentChatMatrix({
               </Button>
             )}
           </div>
-          <div className="mt-1.5 flex items-center justify-between px-1 font-mono text-[9px] text-muted-foreground">
+          <div className="mt-1.5 flex items-center justify-between px-1 font-mono text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1">
               <CornerDownRight className="h-2.5 w-2.5" />
               Enter to send · Shift+Enter for newline

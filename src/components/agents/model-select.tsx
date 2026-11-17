@@ -46,7 +46,7 @@ export function ModelSelect({
               <SelectItem key={model.key} value={model.key}>
                 <span className="flex w-full items-center gap-2">
                   <span className="max-w-[240px] truncate">{model.name}</span>
-                  <span className="ml-auto font-mono text-[9px] text-muted-foreground">
+                  <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                     {model.provider} · {model.parameterSize ? `${model.parameterSize} · ` : ""}
                     {formatMB(model.vramEstimateMB)}
                     {model.heavy ? " · heavy" : ""}
@@ -67,7 +67,7 @@ export function ModelSelect({
               <SelectItem key={model.key} value={model.key}>
                 <span className="flex w-full items-center gap-2">
                   <span className="max-w-[240px] truncate">{model.name}</span>
-                  <span className="ml-auto font-mono text-[9px] text-muted-foreground">
+                  <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                     {model.provider} · {model.zeroCost ? "free" : `$${model.costInputPerMTok}/M`}
                   </span>
                 </span>

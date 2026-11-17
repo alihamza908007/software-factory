@@ -121,7 +121,7 @@ export function GlobalRunLauncher() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <div className="mb-1 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-factory-lime">
+          <div className="eyebrow mb-1 flex items-center gap-1.5">
             <Sparkles className="h-3.5 w-3.5" />
             Autonomous SDLC
           </div>
@@ -190,7 +190,7 @@ export function GlobalRunLauncher() {
           <div className="grid gap-1.5">
             <Label>Build brief</Label>
             {activePipelineTopology && (
-              <div className="rounded-md border border-factory-cyan/20 bg-factory-cyan/5 px-2.5 py-1.5 font-mono text-[10px] text-factory-cyan">
+              <div className="rounded-md border border-factory-cyan/20 bg-factory-cyan/5 px-2.5 py-1.5 font-mono text-xs text-factory-cyan">
                 Active canvas blueprint · {activePipelineTopology.nodes.length} nodes · {activePipelineTopology.edges.length} connections
               </div>
             )}
@@ -211,7 +211,7 @@ export function GlobalRunLauncher() {
             <div className="flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5">
               <div>
                 <div className="text-xs font-medium">Self-heal budget</div>
-                <div className="text-[10px] text-muted-foreground">Max repair loops</div>
+                <div className="text-xs text-muted-foreground">Max repair loops</div>
               </div>
               <Input
                 type="number"
@@ -228,7 +228,7 @@ export function GlobalRunLauncher() {
                   <GitPullRequest className="h-3.5 w-3.5 text-factory-cyan" />
                   Push & draft PR
                 </div>
-                <div className="text-[10px] text-muted-foreground">
+                <div className="text-xs text-muted-foreground">
                   {settings?.hasGithubToken ? "GitHub configured" : "Token required in Settings"}
                 </div>
               </div>
@@ -237,7 +237,7 @@ export function GlobalRunLauncher() {
             <div className="flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5">
               <div>
                 <div className="text-xs font-medium">Parallel verification</div>
-                <div className="text-[10px] text-muted-foreground">Run lint and tests together</div>
+                <div className="text-xs text-muted-foreground">Run lint and tests together</div>
               </div>
               <Switch checked={allowConcurrency} onCheckedChange={setAllowConcurrency} />
             </div>

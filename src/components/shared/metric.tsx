@@ -19,14 +19,14 @@ export function Metric({
       <div className="metric truncate" style={accent ? { color: accent } : undefined}>
         {value}
       </div>
-      {sub && <div className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{sub}</div>}
+      {sub && <div className="mt-0.5 truncate text-xs text-muted-foreground">{sub}</div>}
     </div>
   );
 }
 
 export function Sparkline({
   values,
-  color = "#c8f169",
+  color = "hsl(var(--primary))",
   className,
 }: {
   values: number[];

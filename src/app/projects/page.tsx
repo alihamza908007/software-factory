@@ -37,9 +37,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const STACK_META: Record<Project["stack"], { label: string; color: string }> = {
-  node: { label: "Node · zero deps", color: "#c8f169" },
-  python: { label: "Python 3", color: "#6fe7dd" },
-  next: { label: "Next.js", color: "#f5b544" },
+  node: { label: "Node · zero deps", color: "hsl(var(--primary))" },
+  python: { label: "Python 3", color: "hsl(var(--factory-cyan))" },
+  next: { label: "Next.js", color: "hsl(var(--factory-amber))" },
 };
 
 export default function ProjectsPage() {
@@ -159,9 +159,9 @@ export default function ProjectsPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Local workspaces"
+        eyebrow="Workspaces"
         title="Projects"
-        description="Every project is a real folder under .data/workspaces. Agents write files there, git tracks phase commits, and the local terminal runs its tests."
+        description="Every project is a real folder on this machine. Agents write files there and git tracks each phase."
         actions={
           <Button size="sm" onClick={() => setCreating(true)}>
             <Plus className="h-3.5 w-3.5" />
@@ -180,7 +180,7 @@ export default function ProjectsPage() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <div className="flex items-center gap-3 font-mono text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-3 font-mono text-xs text-muted-foreground">
           <span>{projects.length} workspaces</span>
           <span>·</span>
           <span>{runs.length} runs</span>
@@ -196,10 +196,6 @@ export default function ProjectsPage() {
             const lastRun = project.lastRun as Run | null | undefined;
             return (
               <section key={project.id} className="panel group relative flex flex-col overflow-hidden p-4">
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-0 h-px"
-                  style={{ background: `linear-gradient(90deg, transparent, ${stack.color}80, transparent)` }}
-                />
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex min-w-0 items-start gap-2.5">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary/50 text-factory-cyan">
@@ -207,7 +203,7 @@ export default function ProjectsPage() {
                     </span>
                     <div className="min-w-0">
                       <h3 className="truncate text-sm font-semibold">{project.name}</h3>
-                      <div className="font-mono text-[9px] uppercase tracking-wider" style={{ color: stack.color }}>
+                      <div className="font-mono text-[11px]" style={{ color: stack.color }}>
                         {stack.label}
                       </div>
                     </div>
@@ -219,7 +215,7 @@ export default function ProjectsPage() {
                   {project.description}
                 </p>
 
-                <div className="mt-3 rounded-md border border-border/50 bg-secondary/50 px-2.5 py-1.5 font-mono text-[9px] text-muted-foreground">
+                <div className="mt-3 rounded-md border border-border/50 bg-secondary/50 px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground">
                   <div className="truncate">{project.workspacePath}</div>
                 </div>
 
@@ -227,14 +223,14 @@ export default function ProjectsPage() {
                   {lastRun ? (
                     <>
                       <StatusPill status={lastRun.status} />
-                      <span className="min-w-0 flex-1 truncate font-mono text-[9px] text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
                         {truncate(lastRun.prompt, 46)}
                       </span>
                     </>
                   ) : (
-                    <span className="font-mono text-[9px] text-muted-foreground">No runs yet</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">No runs yet</span>
                   )}
-                  <span className="font-mono text-[9px] text-muted-foreground">{timeAgo(project.updatedAt)}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">{timeAgo(project.updatedAt)}</span>
                 </div>
 
                 <div className="mt-3 flex items-center gap-1.5 border-t border-border/50 pt-3">
@@ -249,7 +245,7 @@ export default function ProjectsPage() {
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="text-muted-foreground hover:text-red-300"
+                    className="text-muted-foreground hover:text-destructive"
                     onClick={() => setDeleting(project)}
                     aria-label="Delete project"
                   >
@@ -329,7 +325,7 @@ export default function ProjectsPage() {
               <DialogHeader>
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{STACK_META[detail.stack].label}</Badge>
-                  <span className="font-mono text-[9px] text-muted-foreground">{detail.workspacePath}</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">{detail.workspacePath}</span>
                   <button
                     onClick={() => {
                       void navigator.clipboard.writeText(detail.workspacePath);
@@ -346,7 +342,7 @@ export default function ProjectsPage() {
                         void navigator.clipboard.writeText(detail.desktopLink as string);
                         toast.success("Desktop shortcut copied.");
                       }}
-                      className="inline-flex items-center gap-1 rounded-full border border-factory-lime/25 bg-factory-lime/5 px-2 py-0.5 font-mono text-[9px] text-factory-lime hover:bg-factory-lime/10"
+                      className="inline-flex items-center gap-1 rounded-full border border-factory-lime/25 bg-factory-lime/5 px-2 py-0.5 font-mono text-[11px] text-factory-lime hover:bg-factory-lime/10"
                       title={detail.desktopLink}
                     >
                       <MonitorSmartphone className="h-3 w-3" />
@@ -395,10 +391,10 @@ export default function ProjectsPage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <StatusPill status={detailRuns[0].status} />
-                            <span className="font-mono text-[9px] text-muted-foreground">{timeAgo(detailRuns[0].updatedAt)}</span>
+                            <span className="font-mono text-[11px] text-muted-foreground">{timeAgo(detailRuns[0].updatedAt)}</span>
                           </div>
                           <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-muted-foreground">{detailRuns[0].prompt}</p>
-                          <div className="mt-2 flex items-center gap-2 font-mono text-[9px] text-muted-foreground">
+                          <div className="mt-2 flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
                             <GitBranch className="h-3 w-3" /> {detailRuns[0].git.branch ?? "—"}
                           </div>
                           <Button variant="outline" size="sm" className="mt-3" asChild>
@@ -413,7 +409,7 @@ export default function ProjectsPage() {
                     </div>
                     <div className="panel-inset p-3">
                       <SectionLabel>Workspace facts</SectionLabel>
-                      <div className="space-y-2 font-mono text-[10px]">
+                      <div className="space-y-2 font-mono text-xs">
                         <div className="flex justify-between gap-3">
                           <span className="text-muted-foreground">Stack</span>
                           <span>{detail.stack}</span>
@@ -448,7 +444,7 @@ export default function ProjectsPage() {
                             key={file}
                             onClick={() => void loadFile(detail, file)}
                             className={cn(
-                              "flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left font-mono text-[10px] transition-colors",
+                              "flex w-full items-center gap-1.5 rounded px-2 py-1.5 text-left font-mono text-xs transition-colors",
                               selectedFile === file ? "bg-factory-lime/10 text-factory-lime" : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
                             )}
                           >
@@ -460,10 +456,10 @@ export default function ProjectsPage() {
                     </div>
                     <div className="panel-inset flex max-h-[46vh] min-h-[300px] flex-col overflow-hidden">
                       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-                        <span className="truncate font-mono text-[10px] text-muted-foreground">{selectedFile ?? "Select a file"}</span>
+                        <span className="truncate font-mono text-xs text-muted-foreground">{selectedFile ?? "Select a file"}</span>
                         {selectedFile && <Badge variant="outline">read-only</Badge>}
                       </div>
-                      <pre className="flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-[10px] leading-relaxed text-zinc-300">
+                      <pre className="flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-xs leading-relaxed text-zinc-300">
                         {selectedFile ? fileContent : "Choose a file from the workspace tree."}
                       </pre>
                     </div>
@@ -480,10 +476,10 @@ export default function ProjectsPage() {
                       >
                         <StatusPill status={run.status} />
                         <span className="min-w-0 flex-1 truncate text-[11px]">{run.prompt}</span>
-                        <span className="hidden font-mono text-[9px] text-muted-foreground sm:block">
+                        <span className="hidden font-mono text-[11px] text-muted-foreground sm:block">
                           {run.phases.filter((phase) => phase.status === "passed").length}/5
                         </span>
-                        <span className="font-mono text-[9px] text-muted-foreground">{timeAgo(run.updatedAt)}</span>
+                        <span className="font-mono text-[11px] text-muted-foreground">{timeAgo(run.updatedAt)}</span>
                         <ChevronRight className="h-3 w-3 text-muted-foreground" />
                       </Link>
                     ))}

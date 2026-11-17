@@ -715,7 +715,7 @@ function witnessAgent(model: ModelInfo): Agent {
     maxTokens: 900,
     allowConcurrency: true,
     enabled: true,
-    color: "#f5b544",
+    color: "#b08968",
     icon: "ShieldCheck",
     createdAt: now,
     updatedAt: now,

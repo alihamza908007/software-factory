@@ -37,7 +37,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type SettingsState = FactorySettings & {
   hasOpencodePassword?: boolean;
@@ -304,114 +304,27 @@ export default function SettingsPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Guardrails & providers"
+        eyebrow="Configuration"
         title="Settings"
-        description="Tune the local model queue, provider endpoints, execution sandbox, git identity and GitHub integration. Secrets are stored only in .data/factory.json on this machine."
+        description="Providers, execution behavior and local system status. Secrets stay on this machine."
         actions={
           <Button size="sm" onClick={save} disabled={saving}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Save settings
+            Save changes
           </Button>
         }
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="space-y-4">
-          <section className="panel p-4">
-            <SectionLabel action={<Badge variant="success"><ShieldCheck className="h-2.5 w-2.5" /> hard guard</Badge>}>
-              Resource & VRAM guardrails
-            </SectionLabel>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-1.5">
-                <Label>Total unified memory budget (MB)</Label>
-                <Input
-                  type="number"
-                  step="512"
-                  min="8192"
-                  max="49152"
-                  value={draft.vramBudgetMB}
-                  onChange={(event) => set("vramBudgetMB", Number(event.target.value))}
-                  className="font-mono"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Model weights + KV cache are measured against this ceiling.
-                </p>
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Reserved for macOS (MB)</Label>
-                <Input
-                  type="number"
-                  step="512"
-                  min="2048"
-                  max="24576"
-                  value={draft.reserveMB}
-                  onChange={(event) => set("reserveMB", Number(event.target.value))}
-                  className="font-mono"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Usable model budget: <span className="font-mono text-factory-lime">{formatMB(budget)}</span>
-                </p>
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Concurrent heavy local models</Label>
-                <Input value="1" readOnly className="font-mono" />
-                <p className="text-[10px] text-muted-foreground">
-                  Heavy local generations run one at a time. Cloud and eligible light local generations remain concurrent.
-                </p>
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Max concurrent light models</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="4"
-                  value={draft.maxConcurrentLight}
-                  onChange={(event) => set("maxConcurrentLight", Number(event.target.value))}
-                  className="font-mono"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Models at or below 8B may run up to this many streams. Heavy models are always gated separately.
-                </p>
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Queue timeout before cloud fallback (ms)</Label>
-                <Input
-                  type="number"
-                  step="5000"
-                  min="5000"
-                  max="600000"
-                  value={draft.vramQueueTimeoutMs}
-                  onChange={(event) => set("vramQueueTimeoutMs", Number(event.target.value))}
-                  className="font-mono"
-                />
-              </div>
-            </div>
 
-            <div className="mt-4 grid gap-2">
-              <ToggleRow
-                title="Allow light-model concurrency"
-                description="A light local model may share memory with a resident heavy model when the budget permits."
-                checked={draft.allowConcurrentLight}
-                onChange={(value) => set("allowConcurrentLight", value)}
-              />
-              <ToggleRow
-                title="Allow cloud fallback"
-                description="When local VRAM is saturated or a local generation fails, route to the configured cloud model."
-                checked={draft.allowCloudFallback}
-                onChange={(value) => set("allowCloudFallback", value)}
-              />
-            </div>
+      <Tabs defaultValue="providers">
+        <TabsList>
+          <TabsTrigger value="providers">Providers</TabsTrigger>
+          <TabsTrigger value="execution">Execution</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+        </TabsList>
 
-            <div className="mt-4 grid gap-1.5">
-              <Label>Global fallback model</Label>
-              <ModelSelect
-                value={draft.fallbackModelKey}
-                onChange={(value) => set("fallbackModelKey", value)}
-                models={models}
-              />
-            </div>
-          </section>
-
+        <TabsContent value="providers">
+          <div className="grid gap-4">
           <section className="panel p-4">
             <SectionLabel action={
               <div className="flex gap-1.5">
@@ -445,7 +358,7 @@ export default function SettingsPage() {
                     placeholder="http://127.0.0.1:11434"
                   />
                 </div>
-                <p className="mt-2 font-mono text-[9px] text-muted-foreground">
+                <p className="mt-2 font-mono text-[11px] text-muted-foreground">
                   Discovery: /api/tags · streaming: /api/chat · resident models: /api/ps
                 </p>
               </div>
@@ -485,7 +398,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
-                <p className="mt-2 font-mono text-[9px] text-muted-foreground">
+                <p className="mt-2 font-mono text-[11px] text-muted-foreground">
                   Cloud agents use stateless OpenCode sessions. Free-tier models are routed through the local OpenCode service.
                 </p>
               </div>
@@ -516,7 +429,7 @@ export default function SettingsPage() {
                     placeholder="http://127.0.0.1:1234/v1"
                   />
                 </div>
-                <p className="mt-2 font-mono text-[9px] text-muted-foreground">
+                <p className="mt-2 font-mono text-[11px] text-muted-foreground">
                   Local models are discovered from /models and execute through the same VRAM queue as Ollama.
                 </p>
               </div>
@@ -576,10 +489,110 @@ export default function SettingsPage() {
                 );
               })}
             </div>
-            <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
               Keys are stored by the local server in <span className="font-mono">.data/factory.json</span> and mirrored to{" "}
               <span className="font-mono">.env.local</span>. They are never cached in browser storage. Existing credentials are retained unless replaced or cleared.
             </p>
+          </section>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="execution">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="space-y-4">
+          <section className="panel p-4">
+            <SectionLabel action={<Badge variant="success"><ShieldCheck className="h-2.5 w-2.5" /> hard guard</Badge>}>
+              Resource & VRAM guardrails
+            </SectionLabel>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label>Total unified memory budget (MB)</Label>
+                <Input
+                  type="number"
+                  step="512"
+                  min="8192"
+                  max="49152"
+                  value={draft.vramBudgetMB}
+                  onChange={(event) => set("vramBudgetMB", Number(event.target.value))}
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Model weights + KV cache are measured against this ceiling.
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Reserved for macOS (MB)</Label>
+                <Input
+                  type="number"
+                  step="512"
+                  min="2048"
+                  max="24576"
+                  value={draft.reserveMB}
+                  onChange={(event) => set("reserveMB", Number(event.target.value))}
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Usable model budget: <span className="font-mono text-factory-lime">{formatMB(budget)}</span>
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Concurrent heavy local models</Label>
+                <Input value="1" readOnly className="font-mono" />
+                <p className="text-xs text-muted-foreground">
+                  Heavy local generations run one at a time. Cloud and eligible light local generations remain concurrent.
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Max concurrent light models</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="4"
+                  value={draft.maxConcurrentLight}
+                  onChange={(event) => set("maxConcurrentLight", Number(event.target.value))}
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Models at or below 8B may run up to this many streams. Heavy models are always gated separately.
+                </p>
+              </div>
+              <div className="grid gap-1.5">
+                <Label>Queue timeout before cloud fallback (ms)</Label>
+                <Input
+                  type="number"
+                  step="5000"
+                  min="5000"
+                  max="600000"
+                  value={draft.vramQueueTimeoutMs}
+                  onChange={(event) => set("vramQueueTimeoutMs", Number(event.target.value))}
+                  className="font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-2">
+              <ToggleRow
+                title="Allow light-model concurrency"
+                description="A light local model may share memory with a resident heavy model when the budget permits."
+                checked={draft.allowConcurrentLight}
+                onChange={(value) => set("allowConcurrentLight", value)}
+              />
+              <ToggleRow
+                title="Allow cloud fallback"
+                description="When local VRAM is saturated or a local generation fails, route to the configured cloud model."
+                checked={draft.allowCloudFallback}
+                onChange={(value) => set("allowCloudFallback", value)}
+              />
+            </div>
+
+            <div className="mt-4 grid gap-1.5">
+              <Label>Global fallback model</Label>
+              <ModelSelect
+                value={draft.fallbackModelKey}
+                onChange={(value) => set("fallbackModelKey", value)}
+                models={models}
+              />
+            </div>
           </section>
 
           <section className="panel p-4">
@@ -632,7 +645,7 @@ export default function SettingsPage() {
               />
             </div>
             {!draft.allowExecution && (
-              <div className="mt-3 flex items-start gap-2 rounded border border-factory-amber/20 bg-factory-amber/5 p-2.5 text-[10px] text-factory-amber">
+              <div className="mt-3 flex items-start gap-2 rounded border border-factory-amber/20 bg-factory-amber/5 p-2.5 text-xs text-factory-amber">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 Execution is disabled. Testing will not run and self-healing cannot converge. This is a static-generation mode.
               </div>
@@ -683,7 +696,7 @@ export default function SettingsPage() {
                 icon={<Github className="h-3.5 w-3.5" />}
               />
             </div>
-            <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
               Tokens are stored locally in <span className="font-mono">.data/factory.json</span> with file mode 600 and never
               written into commit history. Pushes use a temporary askpass helper, not the remote URL.
             </p>
@@ -779,16 +792,32 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
-              <p className="mt-2 text-[10px] leading-relaxed text-factory-amber/80">
+              <p className="mt-2 text-xs leading-relaxed text-factory-amber/80">
                 The supervisor hashes [source → target + payload] for the last {draft.deadLoopWindow} handoffs.
                 Reaching {draft.deadLoopThreshold} identical transitions freezes the pipeline with a
                 DEAD_LOOP_EXCEPTION before another token is spent.
               </p>
             </div>
           </section>
-        </div>
+            </div>
+            <aside className="space-y-4">
+          <section className="rounded-xl border border-factory-amber/20 bg-factory-amber/5 p-4">
+            <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-factory-amber">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              Safety boundary
+            </div>
+            <p className="text-xs leading-relaxed text-factory-amber/80">
+              Generated code executes locally during tests. The factory constrains cwd, command allowlist,
+              environment and timeout, but it is not an OS-level sandbox. Review generated projects before
+              deploying. Never point the GitHub token at an organisation you do not control.
+            </p>
+          </section>
+            </aside>
+          </div>
+        </TabsContent>
 
-        <aside className="space-y-4">
+        <TabsContent value="system">
+          <div className="grid gap-4 md:grid-cols-2">
           <section className="panel p-4">
             <SectionLabel>Hardware telemetry</SectionLabel>
             <div className="space-y-3">
@@ -803,7 +832,7 @@ export default function SettingsPage() {
                 </span>
                 <div className="min-w-0">
                   <div className="truncate text-xs font-medium">{health?.hardware.cpu ?? "Apple Silicon"}</div>
-                  <div className="font-mono text-[9px] text-muted-foreground">
+                  <div className="font-mono text-[11px] text-muted-foreground">
                     {health?.hardware.arch} · {health?.hardware.cores} cores · {health?.hardware.unifiedMemory ? "unified memory" : "system memory"}
                   </div>
                 </div>
@@ -827,13 +856,13 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div>
-                <div className="mb-1 flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+                <div className="mb-1 flex items-center justify-between font-mono text-[11px] text-muted-foreground">
                   <span>queue utilization</span>
                   <span>{Math.round((used / budget) * 100) || 0}%</span>
                 </div>
                 <Progress value={(used / budget) * 100} className="h-1.5" indicatorClassName={used / budget > 0.85 ? "bg-factory-red" : "bg-factory-lime"} />
               </div>
-              <div className="space-y-1 font-mono text-[10px]">
+              <div className="space-y-1 font-mono text-xs">
                 <div className="flex justify-between"><span className="text-muted-foreground">Running</span><span>{resources?.running.length ?? 0}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Queued</span><span>{resources?.queued.length ?? 0}</span></div>
                 <div className="flex justify-between"><span className="text-muted-foreground">Heavy slots</span><span>{resources?.heavyRunning ?? 0}/{resources?.maxConcurrentHeavy ?? 1}</span></div>
@@ -848,7 +877,7 @@ export default function SettingsPage() {
 
           <section className="panel p-4">
             <SectionLabel>Local storage</SectionLabel>
-            <div className="space-y-2 font-mono text-[10px] text-muted-foreground">
+            <div className="space-y-2 font-mono text-xs text-muted-foreground">
               <div className="flex items-start gap-2">
                 <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-factory-cyan" />
                 <div>
@@ -873,18 +902,6 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-factory-amber/20 bg-factory-amber/5 p-4">
-            <div className="mb-1.5 flex items-center gap-2 text-xs font-medium text-factory-amber">
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Safety boundary
-            </div>
-            <p className="text-[10px] leading-relaxed text-factory-amber/80">
-              Generated code executes locally during tests. The factory constrains cwd, command allowlist,
-              environment and timeout, but it is not an OS-level sandbox. Review generated projects before
-              deploying. Never point the GitHub token at an organisation you do not control.
-            </p>
-          </section>
-
           <section className="panel p-4">
             <SectionLabel>Build status</SectionLabel>
             <div className="space-y-2">
@@ -898,13 +915,14 @@ export default function SettingsPage() {
               <StatusLine label="Local models" online={(health?.models.local ?? 0) > 0} detail={`${health?.models.local ?? 0} installed`} />
               <StatusLine label="Cloud catalog" online={health?.models.cloudOnline} detail={`${health?.models.cloud ?? 0} free models`} />
             </div>
-            <div className="mt-3 border-t border-border/60 pt-3 font-mono text-[9px] text-muted-foreground">
+            <div className="mt-3 border-t border-border/60 pt-3 font-mono text-[11px] text-muted-foreground">
               <div className="flex justify-between"><span>Process RSS</span><span>{formatMB(health?.process.rssMB)}</span></div>
               <div className="flex justify-between"><span>Uptime</span><span>{Math.floor((health?.process.uptimeSec ?? 0) / 60)}m</span></div>
             </div>
           </section>
-        </aside>
-      </div>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -928,7 +946,7 @@ function ToggleRow({
         {icon && <span className="mt-0.5 text-muted-foreground">{icon}</span>}
         <div>
           <div className="text-xs font-medium">{title}</div>
-          <div className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">{description}</div>
+          <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</div>
         </div>
       </div>
       <Switch checked={checked} onCheckedChange={onChange} />
@@ -946,7 +964,7 @@ function StatusLine({
   detail?: string;
 }) {
   return (
-    <div className="flex items-center justify-between font-mono text-[10px]">
+    <div className="flex items-center justify-between font-mono text-xs">
       <span className="flex items-center gap-1.5 text-muted-foreground">
         <span className={cn("h-1.5 w-1.5 rounded-full", online ? "bg-factory-lime" : "bg-factory-red/70")} />
         {label}

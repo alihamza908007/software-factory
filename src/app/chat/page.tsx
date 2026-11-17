@@ -172,9 +172,9 @@ export default function ChatPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Multi-agent coordination"
-        title="Chat Matrix"
-        description="One channel for the whole team. Mention a specialist to route a task, or flip on Autonomous to hand the brief to the full SDLC pipeline."
+        eyebrow="Team chat"
+        title="Chat"
+        description="Mention an agent to route a task, or turn on Autonomous to hand the brief to the full pipeline."
         actions={
           <>
             <Button variant="outline" size="sm" onClick={newThread} disabled={streaming}>
@@ -182,7 +182,7 @@ export default function ChatPage() {
               New chat
             </Button>
             <Button
-              variant={autonomous ? "amber" : "secondary"}
+              variant={autonomous ? "default" : "secondary"}
               size="sm"
               onClick={() => setAutonomous((value) => !value)}
             >
@@ -228,7 +228,7 @@ export default function ChatPage() {
                       >
                         {thread.title}
                       </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[8px] text-muted-foreground">
+                      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
                         <span>{(thread.directMessageCount ?? thread.messageCount)} msg</span>
                         {(thread.handoffCount ?? 0) > 0 && (
                           <span className="rounded-full border border-factory-cyan/25 bg-factory-cyan/5 px-1 text-factory-cyan">
@@ -241,7 +241,7 @@ export default function ChatPage() {
                     </button>
                     <button
                       onClick={() => void deleteThread(thread.id)}
-                      className="mt-0.5 hidden rounded p-0.5 text-muted-foreground hover:text-red-300 group-hover:block"
+                      className="mt-0.5 hidden rounded p-0.5 text-muted-foreground hover:text-destructive group-hover:block"
                       aria-label="Delete thread"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -256,7 +256,7 @@ export default function ChatPage() {
               </div>
             </ScrollArea>
             <div className="border-t border-border/60 p-3">
-              <div className="flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground">
+              <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
                 <Radio className="h-3 w-3 text-factory-lime" />
                 {agents.filter((agent) => agent.enabled).length} agents listening
               </div>
@@ -281,7 +281,7 @@ export default function ChatPage() {
                   type="button"
                   onClick={() => setShowAllHandoffs((prev) => !prev)}
                   className={cn(
-                    "hidden items-center gap-1 rounded px-2 py-0.5 font-mono text-[9px] border transition-colors sm:inline-flex",
+                    "hidden items-center gap-1 rounded px-2 py-0.5 font-mono text-[11px] border transition-colors sm:inline-flex",
                     showAllHandoffs
                       ? "border-factory-cyan/40 bg-factory-cyan/10 text-factory-cyan"
                       : "border-border/70 text-muted-foreground hover:text-foreground"
@@ -295,7 +295,7 @@ export default function ChatPage() {
             </div>
             <div className="flex items-center gap-2">
               <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger className="h-7 w-[150px] font-mono text-[10px]">
+                <SelectTrigger className="h-7 w-[150px] font-mono text-xs">
                   <SelectValue placeholder="No project" />
                 </SelectTrigger>
                 <SelectContent>
@@ -307,7 +307,7 @@ export default function ChatPage() {
                 </SelectContent>
               </Select>
               <div className="flex items-center gap-1.5 rounded-md border border-border/70 bg-secondary/50 px-2 py-1">
-                <span className="font-mono text-[9px] text-muted-foreground">AUTO</span>
+                <span className="font-mono text-[11px] text-muted-foreground">AUTO</span>
                 <Switch checked={autonomous} onCheckedChange={setAutonomous} className="h-4 w-7 [&>span]:h-3 [&>span]:w-3" />
               </div>
             </div>
@@ -356,7 +356,7 @@ export default function ChatPage() {
                     <button
                       key={agent.id}
                       onClick={() => insertMention(agent)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-1 font-mono text-[9px] text-muted-foreground hover:border-factory-lime/30 hover:text-foreground"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground hover:border-factory-lime/30 hover:text-foreground"
                     >
                       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: agent.color }} />
                       @{agent.handle}
@@ -370,7 +370,7 @@ export default function ChatPage() {
           <div className="relative border-t border-border/60 bg-secondary/50 p-2.5">
             {mentionQuery !== null && filteredAgents.length > 0 && (
               <div className="absolute bottom-full left-2.5 z-20 mb-1 w-72 overflow-hidden rounded-lg border border-border bg-popover shadow-xl">
-                <div className="border-b border-border/60 px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                <div className="border-b border-border/60 px-2.5 py-1.5 font-mono text-[11px] tracking-wide text-muted-foreground">
                   Route to agent
                 </div>
                 {filteredAgents.map((agent) => (
@@ -382,7 +382,7 @@ export default function ChatPage() {
                     <AgentAvatar name={agent.name} color={agent.color} icon={agent.icon} size="sm" />
                     <div className="min-w-0 flex-1">
                       <div className="text-xs">{agent.name}</div>
-                      <div className="font-mono text-[9px] text-muted-foreground">@{agent.handle} · {agent.role}</div>
+                      <div className="font-mono text-[11px] text-muted-foreground">@{agent.handle} · {agent.role}</div>
                     </div>
                     <ChevronRight className="h-3 w-3 text-muted-foreground" />
                   </button>
@@ -428,7 +428,7 @@ export default function ChatPage() {
                 )}
               </div>
             </div>
-            <div className="mt-1.5 flex items-center justify-between px-1 font-mono text-[9px] text-muted-foreground">
+            <div className="mt-1.5 flex items-center justify-between px-1 font-mono text-[11px] text-muted-foreground">
               <span>
                 {autonomous
                   ? "Autonomous · requirements → architecture → code → tests → CI"
@@ -469,7 +469,7 @@ export default function ChatPage() {
                         <AgentAvatar name={agent.name} color={agent.color} icon={agent.icon} size="sm" />
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[11px] font-medium">{agent.name}</div>
-                          <div className="flex items-center gap-1 font-mono text-[8px] text-muted-foreground">
+                          <div className="flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
                             <span>@{agent.handle}</span>
                             <span>·</span>
                             <span className={cn(status !== "idle" && "text-factory-cyan")}>{status}</span>
@@ -486,21 +486,21 @@ export default function ChatPage() {
               </div>
             </ScrollArea>
             <div className="space-y-2 border-t border-border/60 p-3">
-              <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+              <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1"><Waypoints className="h-3 w-3" /> Auto-handoff</span>
                 <span className={settings?.autoHandoff ? "text-factory-lime" : "text-muted-foreground"}>
                   {settings?.autoHandoff ? "on" : "off"}
                 </span>
               </div>
-              <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+              <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1"><CornerDownRight className="h-3 w-3" /> Max depth</span>
                 <span>{settings?.maxHandoffDepth ?? 2}</span>
               </div>
-              <div className="flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+              <div className="flex items-center justify-between font-mono text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1"><Cpu className="h-3 w-3" /> VRAM guard</span>
                 <span>serialized</span>
               </div>
-              <div className="rounded-md border border-border/60 bg-secondary/50 p-2 text-[9px] leading-relaxed text-muted-foreground">
+              <div className="rounded-md border border-border/60 bg-secondary/50 p-2 text-[11px] leading-relaxed text-muted-foreground">
                 Mentions route the next turn. Agent replies can mention another specialist to trigger
                 an automatic handoff. The payload and original brief travel with the handoff.
               </div>
@@ -509,7 +509,6 @@ export default function ChatPage() {
               <div className="border-t border-border/60 p-2">
                 <div className="mb-2 flex items-center justify-between px-1">
                   <span className="eyebrow">Live mesh events</span>
-                  <Link href="/mesh" className="font-mono text-[9px] text-factory-cyan hover:underline">Mesh Hub</Link>
                 </div>
                 <ScrollArea className="max-h-[260px]">
                   <div className="space-y-1.5">

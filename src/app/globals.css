@@ -5,93 +5,96 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: 150 14% 96%;
-    --foreground: 150 22% 12%;
+    --background: 60 10% 97%;
+    --foreground: 160 10% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 150 22% 12%;
+    --card-foreground: 160 10% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 150 22% 12%;
-    --primary: 84 52% 36%;
+    --popover-foreground: 160 10% 11%;
+    --primary: 160 40% 28%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 150 12% 92%;
-    --secondary-foreground: 150 22% 12%;
-    --muted: 150 10% 93%;
-    --muted-foreground: 150 10% 40%;
-    --accent: 84 45% 90%;
-    --accent-foreground: 150 22% 12%;
-    --destructive: 0 70% 45%;
+    --secondary: 150 8% 94%;
+    --secondary-foreground: 160 10% 14%;
+    --muted: 150 7% 94%;
+    --muted-foreground: 160 5% 43%;
+    --accent: 150 10% 93%;
+    --accent-foreground: 160 10% 14%;
+    --destructive: 0 62% 46%;
     --destructive-foreground: 0 0% 100%;
-    --border: 150 12% 88%;
-    --input: 150 10% 86%;
-    --ring: 84 52% 36%;
-    --radius: 0.7rem;
+    --border: 150 8% 89%;
+    --input: 150 8% 86%;
+    --ring: 160 40% 28%;
+    --radius: 0.625rem;
 
-    /* Brand / neon accents — theme-aware for light/dark visibility */
-    --factory-lime: 84 60% 32%;
-    --factory-amber: 30 90% 40%;
-    --factory-cyan: 188 70% 32%;
-    --factory-red: 0 75% 45%;
+    /* Semantic status colors */
+    --factory-lime: 160 40% 30%;
+    --factory-amber: 32 72% 38%;
+    --factory-cyan: 195 55% 32%;
+    --factory-red: 0 65% 46%;
   }
 
   .dark {
     color-scheme: dark;
-    --background: 140 8% 4%;
-    --foreground: 80 10% 92%;
-    --card: 140 8% 6%;
-    --card-foreground: 80 10% 92%;
-    --popover: 140 9% 6%;
-    --popover-foreground: 80 10% 92%;
-    --primary: 80 82% 68%;
-    --primary-foreground: 140 20% 5%;
-    --secondary: 140 6% 12%;
-    --secondary-foreground: 80 8% 88%;
-    --muted: 140 6% 11%;
-    --muted-foreground: 120 4% 55%;
-    --accent: 140 7% 14%;
-    --accent-foreground: 80 8% 92%;
-    --destructive: 0 72% 58%;
+    --background: 160 8% 7%;
+    --foreground: 60 7% 93%;
+    --card: 160 6% 10%;
+    --card-foreground: 60 7% 93%;
+    --popover: 160 6% 10%;
+    --popover-foreground: 60 7% 93%;
+    --primary: 158 42% 62%;
+    --primary-foreground: 160 20% 8%;
+    --secondary: 160 6% 14%;
+    --secondary-foreground: 60 6% 90%;
+    --muted: 160 5% 15%;
+    --muted-foreground: 155 5% 62%;
+    --accent: 160 6% 16%;
+    --accent-foreground: 60 6% 92%;
+    --destructive: 0 62% 58%;
     --destructive-foreground: 0 0% 100%;
-    --border: 140 7% 15%;
-    --input: 140 7% 16%;
-    --ring: 80 82% 68%;
-    --radius: 0.7rem;
+    --border: 160 6% 18%;
+    --input: 160 6% 20%;
+    --ring: 158 42% 62%;
 
-    /* Brand / neon accents — theme-aware for light/dark visibility */
-    --factory-lime: 84 82% 68%;
-    --factory-amber: 38 90% 61%;
-    --factory-cyan: 174 73% 67%;
-    --factory-red: 0 100% 71%;
+    --factory-lime: 158 44% 62%;
+    --factory-amber: 36 68% 60%;
+    --factory-cyan: 190 45% 62%;
+    --factory-red: 0 62% 62%;
   }
 
   * {
     @apply border-border;
   }
 
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "ss01" on, "cv01" on;
+    font-feature-settings: "cv02" on, "cv03" on, "cv04" on, "cv11" on;
+    letter-spacing: -0.006em;
   }
 
   ::selection {
-    background: rgba(200, 241, 105, 0.25);
-    color: #f4f8ef;
+    background: hsl(var(--primary) / 0.18);
+    color: hsl(var(--foreground));
   }
 
   ::-webkit-scrollbar {
-    width: 9px;
-    height: 9px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #2a332c;
+    background: hsl(var(--muted-foreground) / 0.25);
     border-radius: 8px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #3b473d;
+    background: hsl(var(--muted-foreground) / 0.4);
     border-radius: 8px;
     border: 2px solid transparent;
     background-clip: content-box;
@@ -100,66 +103,23 @@
 
 @layer components {
   .panel {
-    @apply rounded-xl border border-border/80 bg-card/70 backdrop-blur-sm;
+    @apply rounded-lg border border-border bg-card;
   }
 
   .panel-inset {
-    @apply rounded-lg border border-border/60;
-    background-color: hsl(var(--foreground) / 0.05);
-  }
-
-  .panel-raised {
-    @apply rounded-xl border border-border/80 bg-card/90 shadow-lg shadow-black/10 backdrop-blur-md;
+    @apply rounded-md border border-border bg-secondary/60;
   }
 
   .eyebrow {
-    @apply font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground;
+    @apply text-[11px] font-medium text-muted-foreground;
   }
 
   .metric {
-    @apply font-mono text-2xl font-medium tracking-tight text-foreground;
-  }
-
-  .hud-line {
-    background-image: linear-gradient(
-      90deg,
-      transparent,
-      rgba(200, 241, 105, 0.5),
-      transparent
-    );
-  }
-
-  .glow-lime {
-    box-shadow: 0 0 32px -8px rgba(200, 241, 105, 0.35);
+    @apply text-2xl font-semibold tracking-tight text-foreground;
   }
 
   .text-balance {
     text-wrap: balance;
-  }
-
-  .factory-grid {
-    background-image:
-      linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
-    background-size: 40px 40px;
-  }
-
-  .status-dot {
-    @apply relative inline-flex h-2 w-2 shrink-0;
-  }
-  .status-dot::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: 9999px;
-    background: hsl(var(--primary));
-  }
-  .status-dot[data-busy="true"]::before {
-    animation: status-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
-  }
-  .status-dot[data-idle="true"]::before {
-    background: hsl(var(--muted-foreground));
-    opacity: 0.6;
   }
 
   .live-dot {
@@ -170,26 +130,18 @@
     position: absolute;
     inset: 0;
     border-radius: 9999px;
-    background: hsl(var(--factory-lime, 84 82% 68%));
-  }
-  .live-dot::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: 9999px;
-    background: hsl(var(--factory-lime, 84 82% 68%));
-    animation: live-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+    background: hsl(var(--factory-lime));
   }
 
   .skeleton {
     background: linear-gradient(
       90deg,
       hsl(var(--muted)) 25%,
-      hsl(var(--muted-foreground) / 0.25) 50%,
+      hsl(var(--muted-foreground) / 0.18) 50%,
       hsl(var(--muted)) 75%
     );
     background-size: 200% 100%;
-    animation: shimmer 1.6s linear infinite;
+    animation: shimmer 1.8s linear infinite;
     border-radius: calc(var(--radius) - 4px);
   }
 
@@ -225,12 +177,13 @@
     @apply list-decimal;
   }
   .markdown-body code {
-    @apply rounded bg-black/40 px-1 py-0.5 font-mono text-[0.82em] text-factory-lime;
-    background-color: hsl(var(--foreground) / 0.1);
+    @apply rounded px-1 py-0.5 font-mono text-[0.82em];
+    background-color: hsl(var(--foreground) / 0.07);
+    color: hsl(var(--foreground));
   }
   .markdown-body pre {
-    @apply my-3 box-border w-full max-w-full overflow-x-auto rounded-lg border border-border/70 p-3;
-    background-color: hsl(var(--foreground) / 0.06);
+    @apply my-3 box-border w-full max-w-full overflow-x-auto rounded-md border border-border p-3;
+    background-color: hsl(var(--secondary));
     white-space: pre;
   }
   .markdown-body pre code {
@@ -238,10 +191,10 @@
     white-space: pre;
   }
   .markdown-body a {
-    @apply text-factory-lime underline underline-offset-2;
+    @apply text-primary underline underline-offset-2;
   }
   .markdown-body blockquote {
-    @apply my-2 border-l-2 border-factory-lime/50 pl-3 text-muted-foreground;
+    @apply my-2 border-l-2 border-border pl-3 text-muted-foreground;
   }
   .markdown-body table {
     @apply my-2 block w-full max-w-full overflow-x-auto border-collapse text-xs;
@@ -250,18 +203,25 @@
   .markdown-body td {
     @apply border border-border px-2 py-1 text-left;
   }
-}
 
-@layer utilities {
-  .mask-fade-y {
-    mask-image: linear-gradient(to bottom, transparent, black 8%, black 92%, transparent);
+  /* Sonner stays inside the theme instead of hardcoded dark colors. */
+  [data-sonner-toaster] {
+    --normal-bg: hsl(var(--card));
+    --normal-text: hsl(var(--card-foreground));
+    --normal-border: hsl(var(--border));
+    --success-bg: hsl(var(--card));
+    --success-text: hsl(var(--card-foreground));
+    --success-border: hsl(var(--border));
+    --error-bg: hsl(var(--card));
+    --error-text: hsl(var(--card-foreground));
+    --error-border: hsl(var(--border));
   }
 }
 
 @keyframes fade-up {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -269,68 +229,9 @@
   }
 }
 
-@keyframes pulse-line {
-  0%, 100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-@keyframes scan {
-  0% {
-    transform: translateY(-100%);
-  }
-  100% {
-    transform: translateY(400%);
-  }
-}
-
-@keyframes blink {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0;
-  }
-}
-
 @keyframes shimmer {
   100% {
     background-position: -200% 0;
-  }
-}
-
-@keyframes glow {
-  0%, 100% {
-    box-shadow: 0 0 24px -6px rgba(200, 241, 105, 0.35);
-  }
-  50% {
-    box-shadow: 0 0 40px -4px rgba(200, 241, 105, 0.55);
-  }
-}
-
-@keyframes status-ping {
-  0% {
-    box-shadow: 0 0 0 0 hsl(var(--primary) / 0.45);
-  }
-  80% {
-    box-shadow: 0 0 0 8px hsl(var(--primary) / 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 hsl(var(--primary) / 0);
-  }
-}
-
-@keyframes live-ping {
-  0% {
-    transform: scale(1);
-    opacity: 0.7;
-  }
-  80%, 100% {
-    transform: scale(2.6);
-    opacity: 0;
   }
 }
 

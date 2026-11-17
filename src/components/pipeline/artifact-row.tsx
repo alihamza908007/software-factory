@@ -10,7 +10,7 @@ export function ArtifactRow({ label, path, exists }: { label: string; path: stri
         <FileCode2 className="h-3 w-3" />
         {label}
       </span>
-      <span className={cn("max-w-[180px] truncate font-mono text-[9px]", exists ? "text-factory-lime" : "text-muted-foreground/50")}>
+      <span className={cn("max-w-[180px] truncate font-mono text-[11px]", exists ? "text-factory-lime" : "text-muted-foreground/50")}>
         {exists ? path : "not generated"}
       </span>
     </div>

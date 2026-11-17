@@ -228,9 +228,9 @@ export default function AgentsPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Workforce configuration"
-        title="Agent Manager"
-        description="Hire specialists, give them a role and system prompt, and route each one to a local or cloud model. Model changes take effect on the very next generation."
+        eyebrow="Team"
+        title="Agents"
+        description="Each agent has a role, a prompt and a model. Changes apply on the next generation."
         actions={
           <Button size="sm" onClick={() => setEditing(emptyDraft(models))}>
             <Plus className="h-3.5 w-3.5" />
@@ -244,13 +244,13 @@ export default function AgentsPage() {
           <Metric label="Active agents" value={agents.filter((agent) => agent.enabled).length} sub={`${agents.length} total hired`} />
         </div>
         <div className="panel p-4">
-          <Metric label="Local routing" value={localAgents} sub={`${agents.length - localAgents} on cloud`} accent="#f5b544" />
+          <Metric label="Local routing" value={localAgents} sub={`${agents.length - localAgents} on cloud`} accent="hsl(var(--factory-amber))" />
         </div>
         <div className="panel p-4">
-          <Metric label="Avg TTFT" value={avgTtft ? formatDuration(avgTtft) : "—"} sub="recent 80 calls" accent="#6fe7dd" />
+          <Metric label="Avg TTFT" value={avgTtft ? formatDuration(avgTtft) : "—"} sub="recent 80 calls" accent="hsl(var(--factory-cyan))" />
         </div>
         <div className="panel p-4">
-          <Metric label="Avg throughput" value={avgTok ? `${avgTok.toFixed(1)} tok/s` : "—"} sub={`${formatCost(totalCost)} cloud spend`} accent="#c8f169" />
+          <Metric label="Avg throughput" value={avgTok ? `${avgTok.toFixed(1)} tok/s` : "—"} sub={`${formatCost(totalCost)} cloud spend`} accent="hsl(var(--primary))" />
         </div>
       </div>
 
@@ -274,7 +274,7 @@ export default function AgentsPage() {
               ))}
             </SelectContent>
           </Select>
-          <span className="hidden items-center gap-1 font-mono text-[10px] text-muted-foreground xl:flex"><SlidersHorizontal className="h-3 w-3" /> live routing</span>
+          <span className="hidden items-center gap-1 font-mono text-xs text-muted-foreground xl:flex"><SlidersHorizontal className="h-3 w-3" /> live routing</span>
         </div>
       </div>
 
@@ -289,22 +289,18 @@ export default function AgentsPage() {
                 key={agent.id}
                 className={cn(
                   "panel relative overflow-hidden p-4 transition-colors",
-                  agent.enabled ? "hover:border-white/15" : "opacity-60",
+                  agent.enabled ? "hover:bg-secondary/30" : "opacity-60",
                 )}
               >
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-0 h-0.5 opacity-80"
-                  style={{ background: `linear-gradient(90deg, transparent, ${agent.color}, transparent)` }}
-                />
                 <div className="flex items-start gap-3">
                   <AgentAvatar name={agent.name} color={agent.color} icon={agent.icon} size="lg" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
-                      <span className="font-mono text-[10px] text-muted-foreground">@{agent.handle}</span>
+                      <span className="font-mono text-xs text-muted-foreground">@{agent.handle}</span>
                       {!agent.enabled && <Badge variant="outline">paused</Badge>}
                     </div>
-                    <div className="font-mono text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+                    <div className="text-xs text-muted-foreground">
                       {agent.role}
                     </div>
                   </div>
@@ -332,7 +328,7 @@ export default function AgentsPage() {
                   />
                   <div className="flex items-center justify-between gap-2">
                     <ModelBadge model={model} modelKey={agent.modelKey} compact />
-                    <span className="font-mono text-[9px] text-muted-foreground">
+                    <span className="font-mono text-[11px] text-muted-foreground">
                       {model?.kind === "local"
                         ? `${formatMB(model.vramEstimateMB)} VRAM`
                         : model?.zeroCost
@@ -375,7 +371,7 @@ export default function AgentsPage() {
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="text-muted-foreground hover:text-red-300"
+                    className="text-muted-foreground hover:text-destructive"
                     onClick={() => setDeleting(agent)}
                     aria-label={`Delete ${agent.name}`}
                   >
@@ -403,7 +399,7 @@ export default function AgentsPage() {
       <Dialog open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
         <DialogContent className="max-h-[92vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
-            <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.2em] text-factory-lime">
+            <div className="eyebrow mb-1">
               {editing?.id ? "Edit specialist" : "Hire specialist"}
             </div>
             <DialogTitle>{editing?.id ? `Configure ${editing.name}` : "New agent"}</DialogTitle>
@@ -509,7 +505,7 @@ export default function AgentsPage() {
                       onChange={(event) => setEditing({ ...editing, temperature: Number(event.target.value) })}
                       className="font-mono"
                     />
-                    <span className="font-mono text-[10px] text-muted-foreground">0–2</span>
+                    <span className="font-mono text-xs text-muted-foreground">0–2</span>
                   </div>
                 </div>
                 <div className="grid gap-1.5">
@@ -547,7 +543,7 @@ export default function AgentsPage() {
               <div className="flex items-center justify-between rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5">
                 <div>
                   <div className="text-xs font-medium">Light-model concurrency</div>
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className="text-xs text-muted-foreground">
                     Allow this agent to share VRAM with a light local model when policy permits.
                   </div>
                 </div>
@@ -566,7 +562,7 @@ export default function AgentsPage() {
                   placeholder="You are… You own… You always… You never…"
                   className="resize-y font-mono text-[11px] leading-relaxed"
                 />
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   This prompt is prepended to every generation. Keep it role-specific and explicit about output contracts.
                 </p>
               </div>
@@ -626,7 +622,7 @@ function PerformanceDialog({
     <Dialog open={Boolean(agent)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[92vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <div className="mb-1 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.2em] text-factory-cyan">
+          <div className="eyebrow mb-1 flex items-center gap-1.5">
             <Activity className="h-3.5 w-3.5" />
             Performance dashboard
           </div>
@@ -650,16 +646,16 @@ function PerformanceDialog({
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <div className="panel-inset p-3">
-                <Metric label="Avg TTFT" value={metrics.length ? formatDuration(avg("ttftMs")) : "—"} accent="#6fe7dd" />
+                <Metric label="Avg TTFT" value={metrics.length ? formatDuration(avg("ttftMs")) : "—"} accent="hsl(var(--factory-cyan))" />
               </div>
               <div className="panel-inset p-3">
                 <Metric label="Avg total" value={metrics.length ? formatDuration(avg("totalMs")) : "—"} />
               </div>
               <div className="panel-inset p-3">
-                <Metric label="Avg tok/s" value={metrics.length ? avg("tokensPerSec").toFixed(1) : "—"} accent="#c8f169" />
+                <Metric label="Avg tok/s" value={metrics.length ? avg("tokensPerSec").toFixed(1) : "—"} accent="hsl(var(--primary))" />
               </div>
               <div className="panel-inset p-3">
-                <Metric label="Cost" value={formatCost(avg("costUsd") * metrics.length)} accent="#f5b544" />
+                <Metric label="Cost" value={formatCost(avg("costUsd") * metrics.length)} accent="hsl(var(--factory-amber))" />
               </div>
               <div className="panel-inset p-3">
                 <Metric label="VRAM" value={agent.modelKey.startsWith("ollama/") ? formatMB(model?.vramEstimateMB) : "0 MB"} />
@@ -679,7 +675,7 @@ function PerformanceDialog({
                         className="w-full rounded-sm bg-factory-lime/60 transition-colors group-hover:bg-factory-lime"
                         style={{ height: `${Math.max(3, (metric.tokensPerSec / maxTok) * 100)}%` }}
                       />
-                      <div className="pointer-events-none absolute -top-7 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] group-hover:block">
+                      <div className="pointer-events-none absolute -top-7 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[11px] group-hover:block">
                         {metric.tokensPerSec.toFixed(1)} tok/s
                       </div>
                     </div>
@@ -691,12 +687,12 @@ function PerformanceDialog({
                 <SectionLabel>Latency profile</SectionLabel>
                 <div className="space-y-2">
                   {[
-                    { label: "Time to first token", value: avg("ttftMs"), color: "#6fe7dd", max: Math.max(...metrics.map((metric) => metric.ttftMs), 1) },
-                    { label: "Total completion", value: avg("totalMs"), color: "#f5b544", max: Math.max(...metrics.map((metric) => metric.totalMs), 1) },
-                    { label: "Queue wait", value: metrics.length ? metrics.reduce((sum, metric) => sum + metric.queuedMs, 0) / metrics.length : 0, color: "#ff8fab", max: Math.max(...metrics.map((metric) => metric.queuedMs), 1) },
+                    { label: "Time to first token", value: avg("ttftMs"), max: Math.max(...metrics.map((metric) => metric.ttftMs), 1) },
+                    { label: "Total completion", value: avg("totalMs"), max: Math.max(...metrics.map((metric) => metric.totalMs), 1) },
+                    { label: "Queue wait", value: metrics.length ? metrics.reduce((sum, metric) => sum + metric.queuedMs, 0) / metrics.length : 0, max: Math.max(...metrics.map((metric) => metric.queuedMs), 1) },
                   ].map((row) => (
                     <div key={row.label}>
-                      <div className="mb-1 flex items-center justify-between font-mono text-[9px] text-muted-foreground">
+                      <div className="mb-1 flex items-center justify-between font-mono text-[11px] text-muted-foreground">
                         <span>{row.label}</span>
                         <span>{formatDuration(row.value)}</span>
                       </div>
@@ -704,7 +700,7 @@ function PerformanceDialog({
                     </div>
                   ))}
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-[9px] text-muted-foreground">
+                <div className="mt-3 grid grid-cols-2 gap-2 font-mono text-[11px] text-muted-foreground">
                   <span>Input tokens: {formatTokens(metrics.reduce((sum, metric) => sum + metric.inputTokens, 0))}</span>
                   <span>Output tokens: {formatTokens(metrics.reduce((sum, metric) => sum + metric.outputTokens, 0))}</span>
                 </div>
@@ -712,7 +708,7 @@ function PerformanceDialog({
             </div>
 
             <div className="panel-inset overflow-hidden">
-              <div className="grid grid-cols-[1fr_80px_80px_70px_80px_80px] gap-2 border-b border-border/60 px-3 py-2 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+              <div className="grid grid-cols-[1fr_80px_80px_70px_80px_80px] gap-2 border-b border-border/60 px-3 py-2 font-mono text-[11px] tracking-wide text-muted-foreground">
                 <span>Model / time</span>
                 <span>TTFT</span>
                 <span>Total</span>
@@ -724,11 +720,11 @@ function PerformanceDialog({
                 {metrics.slice(0, 40).map((metric) => (
                   <div
                     key={metric.id}
-                    className="grid grid-cols-[1fr_80px_80px_70px_80px_80px] items-center gap-2 border-b border-border/30 px-3 py-2 font-mono text-[10px] last:border-0"
+                    className="grid grid-cols-[1fr_80px_80px_70px_80px_80px] items-center gap-2 border-b border-border/30 px-3 py-2 font-mono text-xs last:border-0"
                   >
                     <div className="min-w-0">
                       <div className="truncate text-foreground/90">{metric.modelKey.split("/").slice(1).join("/")}</div>
-                      <div className="text-[9px] text-muted-foreground">
+                      <div className="text-[11px] text-muted-foreground">
                         {timeAgo(metric.createdAt)} {metric.fellBack ? "· fallback" : ""}
                       </div>
                     </div>
@@ -747,7 +743,7 @@ function PerformanceDialog({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-secondary/50 px-3 py-2 text-[10px] text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border/60 bg-secondary/50 px-3 py-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-1"><Timer className="h-3 w-3" /> Streaming latency</span>
               <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-factory-lime" /> Local tok/s</span>
               <span className="flex items-center gap-1"><DollarSign className="h-3 w-3 text-factory-amber" /> Cost estimate</span>

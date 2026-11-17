@@ -23,7 +23,7 @@ export function ValidatorNode({ data, selected }: NodeProps<ValidatorFlowNode>) 
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-xs font-medium">{data.label}</div>
-          <div className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+          <div className="font-mono text-[10px] tracking-wide text-muted-foreground">
             validator gate
           </div>
         </div>
@@ -36,11 +36,11 @@ export function ValidatorNode({ data, selected }: NodeProps<ValidatorFlowNode>) 
         ) : null}
       </div>
       <div className="space-y-1.5 px-3 py-2.5">
-        <div className="font-mono text-[9px] leading-relaxed text-factory-cyan/90">
+        <div className="font-mono text-[11px] leading-relaxed text-factory-cyan/90">
           {data.assertion || "No assertion configured"}
         </div>
         {data.detail && (
-          <div className="line-clamp-2 text-[9px] text-muted-foreground">{data.detail}</div>
+          <div className="line-clamp-2 text-[11px] text-muted-foreground">{data.detail}</div>
         )}
       </div>
       <Handle type="source" position={Position.Right} className="!h-2 !w-2 !border-factory-cyan !bg-factory-cyan" />

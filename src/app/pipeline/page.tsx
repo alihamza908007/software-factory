@@ -305,9 +305,9 @@ export default function PipelinePage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Autonomous execution"
-        title="SDLC Pipeline"
-        description="Five phases, one continuous thread. Every phase commits to a feature branch; failures are scraped, dispatched back to the developer and re-verified until the build converges."
+        eyebrow="Execution"
+        title="Runs"
+        description="Track each run through its five phases, inspect logs and edit artifacts."
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void fetchRuns()}>
@@ -316,7 +316,7 @@ export default function PipelinePage() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => setCanvasOnly((value) => !value)}>
               <Workflow className="h-3.5 w-3.5" />
-              {canvasOnly ? "Back to runs" : "Canvas editor"}
+              {canvasOnly ? "Back to runs" : "Canvas"}
             </Button>
             <Button size="sm" onClick={() => launchRunDialog()}>
               <Plus className="h-3.5 w-3.5" />
@@ -350,7 +350,7 @@ export default function PipelinePage() {
                     key={value}
                     onClick={() => setFilter(value)}
                     className={cn(
-                      "rounded px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider transition-colors",
+                      "rounded px-1.5 py-0.5 font-mono text-[10px] tracking-wide transition-colors",
                       filter === value
                         ? "bg-factory-lime/10 text-factory-lime"
                         : "text-muted-foreground hover:text-foreground",
@@ -387,17 +387,17 @@ export default function PipelinePage() {
                                 : "bg-muted-foreground",
                         )}
                       />
-                      <span className="truncate font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+                      <span className="truncate font-mono text-[10px] tracking-wide text-muted-foreground">
                         {item.projectName}
                       </span>
-                      <span className="ml-auto font-mono text-[8px] text-muted-foreground/60">
+                      <span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
                         {timeAgo(item.updatedAt)}
                       </span>
                     </div>
                     <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-foreground/85">
                       {truncate(item.prompt, 80)}
                     </div>
-                    <div className="mt-1 flex items-center gap-1.5 font-mono text-[8px] text-muted-foreground">
+                    <div className="mt-1 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
                       <span>{item.phases.filter((phase) => phase.status === "passed").length}/5</span>
                       <span>·</span>
                       <span>{item.status}</span>
@@ -429,12 +429,12 @@ export default function PipelinePage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusPill status={run.status} />
                       <Badge variant="outline">{run.projectName}</Badge>
-                      <span className="font-mono text-[10px] text-muted-foreground">{run.id}</span>
+                      <span className="font-mono text-xs text-muted-foreground">{run.id}</span>
                     </div>
                     <h3 className="mt-2 max-w-3xl text-lg font-semibold leading-snug tracking-tight">
                       {run.prompt}
                     </h3>
-                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-[10px] text-muted-foreground">
+                    <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 font-mono text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         <GitBranch className="h-3 w-3" />
                         {run.git.branch ?? "branch pending"}
@@ -522,7 +522,7 @@ export default function PipelinePage() {
                       {run.phases.find((phase) => phase.id === "testing")?.status === "passed" ? (
                         <span className="text-factory-lime">passing</span>
                       ) : run.phases.find((phase) => phase.id === "testing")?.status === "failed" ? (
-                        <span className="text-red-300">failing</span>
+                        <span className="text-destructive">failing</span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
@@ -534,7 +534,7 @@ export default function PipelinePage() {
                       {pr?.status === "created" ? (
                         <span className="text-factory-cyan">#{pr.number}</span>
                       ) : pr?.status === "failed" ? (
-                        <span className="text-red-300">failed</span>
+                        <span className="text-destructive">failed</span>
                       ) : pr?.status === "skipped" ? (
                         <span className="text-muted-foreground">local</span>
                       ) : (
@@ -552,13 +552,13 @@ export default function PipelinePage() {
                       <div key={phase.id} className="flex min-w-0 flex-1 items-center gap-2">
                         <div
                           className={cn(
-                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border font-mono text-[10px]",
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full border font-mono text-xs",
                             state?.status === "passed"
                               ? "border-factory-lime/40 bg-factory-lime/10 text-factory-lime"
                               : state?.status === "running"
                                 ? "border-factory-amber/40 bg-factory-amber/10 text-factory-amber"
                                 : state?.status === "failed"
-                                  ? "border-red-400/40 bg-red-400/10 text-red-300"
+                                  ? "border-destructive/40 bg-destructive/10 text-destructive"
                                   : "border-border text-muted-foreground",
                           )}
                         >
@@ -573,10 +573,10 @@ export default function PipelinePage() {
                           )}
                         </div>
                         <div className="min-w-0 hidden sm:block">
-                          <div className="truncate font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                          <div className="truncate font-mono text-[11px] tracking-wide text-muted-foreground">
                             {meta.short}
                           </div>
-                          <div className="truncate text-[10px]">{phase.name}</div>
+                          <div className="truncate text-xs">{phase.name}</div>
                         </div>
                         {index < PHASES.length - 1 && <ChevronRight className="ml-auto h-3 w-3 shrink-0 text-muted-foreground/30" />}
                       </div>
@@ -586,11 +586,11 @@ export default function PipelinePage() {
               </section>
 
               {run.error && (
-                <div className="flex items-start gap-2 rounded-lg border border-red-400/25 bg-red-400/5 px-3 py-2.5 text-xs text-red-200">
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
                     <div className="font-medium">Run failed</div>
-                    <div className="mt-0.5 font-mono text-[10px] leading-relaxed text-red-200/80">{run.error}</div>
+                    <div className="mt-0.5 font-mono text-xs leading-relaxed text-destructive/80">{run.error}</div>
                   </div>
                 </div>
               )}
@@ -598,12 +598,12 @@ export default function PipelinePage() {
               <Tabs value={tab} onValueChange={setTab}>
                 <div className="flex items-center justify-between">
                   <TabsList>
-                    <TabsTrigger value="kanban">Kanban</TabsTrigger>
-                    <TabsTrigger value="timeline">Timeline</TabsTrigger>
-                    <TabsTrigger value="logs">Live logs</TabsTrigger>
-                    <TabsTrigger value="canvas">Canvas DAG</TabsTrigger>
+                    <TabsTrigger value="kanban">Board</TabsTrigger>
+                    <TabsTrigger value="timeline">Phases</TabsTrigger>
+                    <TabsTrigger value="logs">Logs</TabsTrigger>
+                    <TabsTrigger value="canvas">Canvas</TabsTrigger>
                   </TabsList>
-                  <div className="flex items-center gap-2 font-mono text-[9px] text-muted-foreground">
+                  <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground">
                     <span className={cn("h-1.5 w-1.5 rounded-full", running ? "animate-pulse bg-factory-lime" : "bg-muted-foreground")} />
                     {running ? "streaming" : "snapshot"}
                     <span>·</span>
@@ -645,13 +645,13 @@ export default function PipelinePage() {
                             <div className="flex w-6 shrink-0 flex-col items-center">
                               <span
                                 className={cn(
-                                  "flex h-6 w-6 items-center justify-center rounded-full border font-mono text-[9px]",
+                                  "flex h-6 w-6 items-center justify-center rounded-full border font-mono text-[11px]",
                                   state?.status === "passed"
                                     ? "border-factory-lime/40 bg-factory-lime/10 text-factory-lime"
                                     : state?.status === "running"
                                       ? "border-factory-amber/40 bg-factory-amber/10 text-factory-amber"
                                       : state?.status === "failed"
-                                        ? "border-red-400/40 bg-red-400/10 text-red-300"
+                                        ? "border-destructive/40 bg-destructive/10 text-destructive"
                                         : "border-border text-muted-foreground",
                                 )}
                               >
@@ -663,13 +663,13 @@ export default function PipelinePage() {
                                 <span className="text-xs font-medium">{phase.name}</span>
                                 <StatusPill status={state?.status ?? "pending"} kind="phase" />
                                 {agent && (
-                                  <span className="inline-flex items-center gap-1 font-mono text-[9px] text-muted-foreground">
+                                  <span className="inline-flex items-center gap-1 font-mono text-[11px] text-muted-foreground">
                                     <AgentAvatar name={agent.name} color={agent.color} icon={agent.icon} size="sm" className="h-4 w-4 text-[7px]" />
                                     {agent.name}
                                   </span>
                                 )}
                               </div>
-                              <div className="mt-1 flex items-center gap-3 font-mono text-[9px] text-muted-foreground">
+                              <div className="mt-1 flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
                                 <span>{state?.logs.length ?? 0} log lines</span>
                                 <span>{state?.artifacts.length ?? 0} artifacts</span>
                                 {!!state?.healAttempts.length && (
@@ -690,7 +690,7 @@ export default function PipelinePage() {
                               {!!state.artifacts.length && (
                                 <div className="mb-3 flex flex-wrap gap-1.5">
                                   {state.artifacts.map((artifact) => (
-                                    <Button key={artifact} size="sm" variant="outline" className="h-7 max-w-full font-mono text-[9px]" onClick={() => void openArtifactEditor(artifact, phase.id)} disabled={artifactBusy}>
+                                    <Button key={artifact} size="sm" variant="outline" className="h-7 max-w-full font-mono text-[11px]" onClick={() => void openArtifactEditor(artifact, phase.id)} disabled={artifactBusy}>
                                       <FileCode2 className="h-2.5 w-2.5" /> <span className="truncate">{artifact}</span><Pencil className="h-2.5 w-2.5" />
                                     </Button>
                                   ))}
@@ -705,7 +705,7 @@ export default function PipelinePage() {
                                         "rounded-lg border p-2.5",
                                         attempt.result === "passed"
                                           ? "border-factory-lime/20 bg-factory-lime/5"
-                                          : "border-red-400/20 bg-red-400/5",
+                                          : "border-destructive/20 bg-destructive/5",
                                       )}
                                     >
                                       <div className="flex items-center gap-2 text-[11px]">
@@ -714,14 +714,14 @@ export default function PipelinePage() {
                                         <Badge variant={attempt.result === "passed" ? "success" : "destructive"}>
                                           {attempt.result}
                                         </Badge>
-                                        <span className="ml-auto font-mono text-[9px] text-muted-foreground">
+                                        <span className="ml-auto font-mono text-[11px] text-muted-foreground">
                                           {attempt.agentName} · {attempt.modelKey}
                                         </span>
                                       </div>
-                                      <div className="mt-1 font-mono text-[9px] text-muted-foreground">
+                                      <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                                         {attempt.appliedFiles.join(", ") || "no files applied"}
                                       </div>
-                                      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-secondary/50 p-2 font-mono text-[9px] leading-relaxed text-muted-foreground">
+                                      <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-secondary/50 p-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
                                         {attempt.failureSummary}
                                       </pre>
                                     </div>
@@ -730,7 +730,7 @@ export default function PipelinePage() {
                               )}
                               <div className="max-h-72 space-y-1.5 overflow-y-auto rounded-lg border border-border/50 bg-secondary/50 p-2.5 font-mono">
                                 {state.logs.slice(-30).map((log) => (
-                                  <div key={log.id} className="flex gap-2 text-[10px] leading-relaxed">
+                                  <div key={log.id} className="flex gap-2 text-xs leading-relaxed">
                                     <span
                                       className={cn(
                                         "mt-1 h-1 w-1 shrink-0 rounded-full",
@@ -748,7 +748,7 @@ export default function PipelinePage() {
                                     <div className="min-w-0">
                                       <div className="text-foreground/80">{log.message}</div>
                                       {log.detail && (
-                                        <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[9px] text-muted-foreground">
+                                        <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">
                                           {truncate(log.detail, 1200)}
                                         </pre>
                                       )}
@@ -756,7 +756,7 @@ export default function PipelinePage() {
                                   </div>
                                 ))}
                                 {!state.logs.length && (
-                                  <div className="py-4 text-center text-[10px] text-muted-foreground">
+                                  <div className="py-4 text-center text-xs text-muted-foreground">
                                     No logs yet.
                                   </div>
                                 )}
@@ -786,7 +786,7 @@ export default function PipelinePage() {
                       {run.git.pushed ? "pushed" : run.git.branch ? "local branch" : "pending"}
                     </Badge>
                   </div>
-                  <div className="grid gap-2 font-mono text-[10px]">
+                  <div className="grid gap-2 font-mono text-xs">
                     <div className="flex items-center justify-between">
                       <span className="text-muted-foreground">Branch</span>
                       <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" /> {run.git.branch ?? "—"}</span>
@@ -804,7 +804,7 @@ export default function PipelinePage() {
                       <span>{run.git.dirtyFiles}</span>
                     </div>
                     {run.git.pushError && (
-                      <div className="rounded border border-red-400/20 bg-red-400/5 p-2 text-[9px] text-red-200">
+                      <div className="rounded border border-destructive/20 bg-destructive/5 p-2 text-[11px] text-destructive">
                         {run.git.pushError}
                       </div>
                     )}
@@ -812,14 +812,14 @@ export default function PipelinePage() {
                   <Separator className="my-3" />
                   <div className="max-h-40 space-y-1.5 overflow-y-auto">
                     {run.git.commits.map((commit) => (
-                      <div key={commit.hash} className="flex items-start gap-2 font-mono text-[9px]">
+                      <div key={commit.hash} className="flex items-start gap-2 font-mono text-[11px]">
                         <span className="text-factory-lime">{commit.hash}</span>
                         <span className="min-w-0 flex-1 truncate text-muted-foreground">{commit.message}</span>
                         <span className="text-muted-foreground/50">{timeAgo(commit.at)}</span>
                       </div>
                     ))}
                     {!run.git.commits.length && (
-                      <div className="text-[10px] text-muted-foreground">No commits yet.</div>
+                      <div className="text-xs text-muted-foreground">No commits yet.</div>
                     )}
                   </div>
                 </section>
@@ -831,7 +831,7 @@ export default function PipelinePage() {
                       {pr?.status ?? "local"}
                     </Badge>
                   </div>
-                  <div className="grid gap-2 text-[10px]">
+                  <div className="grid gap-2 text-xs">
                     <ArtifactRow label="Specification" path="docs/SPEC.md" exists={run.phases.find((phase) => phase.id === "requirements")?.artifacts.includes("docs/SPEC.md") ?? false} />
                     <ArtifactRow label="Architecture" path="docs/ARCHITECTURE.md" exists={run.phases.find((phase) => phase.id === "architecture")?.artifacts.includes("docs/ARCHITECTURE.md") ?? false} />
                     <ArtifactRow label="CI workflow" path={run.artifacts.workflowPath ?? ".github/workflows/main.yml"} exists={Boolean(run.artifacts.workflowPath)} />
@@ -848,12 +848,12 @@ export default function PipelinePage() {
                       <ExternalLink className="h-3 w-3" />
                     </a>
                   ) : (
-                    <div className="mt-3 rounded-lg border border-border/60 bg-secondary/50 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+                    <div className="mt-3 rounded-lg border border-border/60 bg-secondary/50 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
                       {pr?.error ?? "Configure GitHub in Settings to push the branch and draft a pull request."}
                     </div>
                   )}
                   {run.artifacts.summary && (
-                    <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">{run.artifacts.summary}</p>
+                    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{run.artifacts.summary}</p>
                   )}
                 </section>
               </div>
@@ -863,7 +863,7 @@ export default function PipelinePage() {
                   <span className="eyebrow">Workspace files</span>
                   <Badge variant="outline">{run.artifacts.fileTree.length}</Badge>
                 </div>
-                <div className="grid max-h-52 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto font-mono text-[9px] text-muted-foreground sm:grid-cols-3 lg:grid-cols-4">
+                <div className="grid max-h-52 grid-cols-2 gap-x-4 gap-y-1 overflow-y-auto font-mono text-[11px] text-muted-foreground sm:grid-cols-3 lg:grid-cols-4">
                   {run.artifacts.fileTree.map((file) => (
                     <div key={file} className="flex items-center gap-1.5 truncate">
                       <FileCode2 className="h-2.5 w-2.5 shrink-0 text-factory-cyan/70" />

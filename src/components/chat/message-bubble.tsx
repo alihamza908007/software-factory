@@ -49,7 +49,7 @@ export function MessageBubble({
             {message.content}
           </ReactMarkdown>
           {message.runId && (
-            <a href={`/pipeline?run=${message.runId}`} className="mt-1 inline-flex items-center gap-1 font-mono text-[10px] text-factory-lime hover:underline">
+            <a href={`/pipeline?run=${message.runId}`} className="mt-1 inline-flex items-center gap-1 font-mono text-xs text-factory-lime hover:underline">
               Open pipeline <ArrowRight className="h-3 w-3" />
             </a>
           )}
@@ -62,7 +62,7 @@ export function MessageBubble({
     return (
       <div className="flex min-w-0 max-w-full justify-end gap-2.5">
         <div className="min-w-0 max-w-[82%] flex-1">
-          <div className="mb-1 text-right font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+          <div className="mb-1 text-right font-mono text-[11px] tracking-wide text-muted-foreground">
             You · {timeAgo(message.createdAt)}
           </div>
           {editing ? (
@@ -77,25 +77,25 @@ export function MessageBubble({
           ) : (
             <div className="max-w-full overflow-hidden rounded-xl rounded-tr-sm border border-factory-lime/20 bg-factory-lime/10 px-3.5 py-2.5 text-sm leading-relaxed text-foreground [overflow-wrap:anywhere]">
               <div className="whitespace-pre-wrap break-words">{message.content}</div>
-              {onEdit && !message.pending && <button className="mt-1 flex items-center gap-1 font-mono text-[9px] text-muted-foreground hover:text-foreground" onClick={() => { setDraft(message.content); setEditing(true); }}><Pencil className="h-2.5 w-2.5" />Edit payload</button>}
+              {onEdit && !message.pending && <button className="mt-1 flex items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-foreground" onClick={() => { setDraft(message.content); setEditing(true); }}><Pencil className="h-2.5 w-2.5" />Edit payload</button>}
             </div>
           )}
           {!!message.mentions?.length && (
             <div className="mt-1 flex flex-wrap justify-end gap-1">
               {message.mentions.map((mention) => (
-                <span key={mention} className="font-mono text-[9px] text-factory-cyan">@{mention}</span>
+                <span key={mention} className="font-mono text-[11px] text-factory-cyan">@{mention}</span>
               ))}
             </div>
           )}
         </div>
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-mono text-[10px] text-muted-foreground">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border bg-secondary font-mono text-xs text-muted-foreground">
           YOU
         </div>
       </div>
     );
   }
 
-  const color = message.agentColor ?? "#6fe7dd";
+  const color = message.agentColor ?? "hsl(var(--primary))";
   return (
     <div className={cn("flex w-full min-w-0 max-w-full gap-2.5", message.handoffFrom && "pl-3 border-l-2 border-factory-cyan/40 ml-1.5")}>
       <div className="shrink-0"><AgentAvatar name={message.agentName ?? "Agent"} color={color} size="md" /></div>
@@ -104,16 +104,16 @@ export function MessageBubble({
           <span className="text-xs font-medium" style={{ color }}>
             {message.agentName ?? "Agent"}
           </span>
-          <span className="font-mono text-[9px] text-muted-foreground">{timeAgo(message.createdAt)}</span>
+          <span className="font-mono text-[11px] text-muted-foreground">{timeAgo(message.createdAt)}</span>
           {message.handoffFrom && (
-            <span className="inline-flex items-center gap-1 rounded-full border border-factory-cyan/25 bg-factory-cyan/5 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-factory-cyan">
+            <span className="inline-flex items-center gap-1 rounded-full border border-factory-cyan/25 bg-factory-cyan/5 px-1.5 py-0.5 font-mono text-[10px] tracking-wide text-factory-cyan">
               <CornerDownRight className="h-2.5 w-2.5" />
               handoff from {message.handoffFrom}
               {typeof message.handoffScore === "number" && ` · ${message.handoffScore}/100`}
             </span>
           )}
           {message.pending && (
-            <span className="inline-flex items-center gap-1 font-mono text-[9px] text-factory-amber">
+            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-factory-amber">
               <Loader2 className="h-2.5 w-2.5 animate-spin" />
               {message.content ? "streaming" : "thinking"}
             </span>
@@ -125,7 +125,7 @@ export function MessageBubble({
           className={cn(
             "min-w-0 max-w-full overflow-hidden rounded-xl rounded-tl-sm border px-3.5 py-2.5",
             message.error
-              ? "border-red-400/25 bg-red-400/5"
+              ? "border-destructive/25 bg-destructive/5"
               : "border-border/70 bg-card/70",
           )}
         >
@@ -157,12 +157,12 @@ export function MessageBubble({
 
         {!!message.artifacts?.length && (
           <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            <span className="inline-flex items-center gap-1 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center gap-1 font-mono text-[10px] tracking-wide text-muted-foreground">
               <FileCode2 className="h-2.5 w-2.5 text-factory-cyan" />
               {message.artifacts.length} artifact{message.artifacts.length === 1 ? "" : "s"}
             </span>
             {message.artifacts.slice(0, 8).map((path) => (
-              <Badge key={path} variant="outline" className="max-w-[240px] truncate font-mono text-[8px]" title={path}>
+              <Badge key={path} variant="outline" className="max-w-[240px] truncate font-mono text-[10px]" title={path}>
                 {path}
               </Badge>
             ))}
@@ -174,7 +174,7 @@ export function MessageBubble({
             <Badge
               variant={message.validation.passed ? "success" : "warning"}
               title={message.validation.topFinding ?? "Silent Witness result"}
-              className="gap-1 font-mono text-[8px]"
+              className="gap-1 font-mono text-[10px]"
             >
               {message.validation.passed ? (
                 <ShieldCheck className="h-2.5 w-2.5" />
@@ -189,13 +189,13 @@ export function MessageBubble({
         )}
 
         {onEdit && !message.pending && !editing && (
-          <button className="mt-1 flex items-center gap-1 font-mono text-[9px] text-muted-foreground hover:text-foreground" onClick={() => { setDraft(message.content); setEditing(true); }}>
+          <button className="mt-1 flex items-center gap-1 font-mono text-[11px] text-muted-foreground hover:text-foreground" onClick={() => { setDraft(message.content); setEditing(true); }}>
             <Pencil className="h-2.5 w-2.5" />Edit payload
           </button>
         )}
 
         {message.metrics && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[9px] text-muted-foreground">
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1">
               <Bot className="h-2.5 w-2.5" />
               {message.metrics.modelKey}
