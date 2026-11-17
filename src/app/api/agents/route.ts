@@ -34,6 +34,8 @@ export async function POST(request: Request) {
       handle,
       role: body.role.trim(),
       description: body.description?.trim() || `${body.role} agent`,
+      capabilities: body.capabilities,
+      skills: body.skills,
       systemPrompt:
         body.systemPrompt?.trim() ||
         `You are ${body.name}, the ${body.role} in an autonomous software factory. Be precise, evidence-driven and concise.`,

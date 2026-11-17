@@ -24,7 +24,7 @@ export function phaseMeta(id: PhaseId) {
 export function findAgent(agents: Agent[], patterns: RegExp[], fallbackHandle?: string): Agent | undefined {
   return (
     agents.find((agent) => agent.enabled && patterns.some((pattern) => pattern.test(agent.role))) ??
-    (fallbackHandle ? agents.find((agent) => agent.handle === fallbackHandle) : undefined) ??
+    (fallbackHandle ? agents.find((agent) => agent.enabled && agent.handle === fallbackHandle) : undefined) ??
     agents.find((agent) => agent.enabled)
   );
 }

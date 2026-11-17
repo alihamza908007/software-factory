@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DEFAULT_SETTINGS, defaultAgents } from "@/lib/core/constants";
+import { DEFAULT_SETTINGS, SPECIALIST_AGENT_IDS, defaultAgents } from "@/lib/core/constants";
 import type {
   Agent,
   AgentMetric,
@@ -18,7 +18,7 @@ export const DATA_ROOT = process.env.FACTORY_DATA_ROOT
   : path.join(process.cwd(), ".data");
 export const WORKSPACES_ROOT = path.join(DATA_ROOT, "workspaces");
 const DB_PATH = path.join(DATA_ROOT, "factory.json");
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 type DbGlobal = typeof globalThis & {
   __factoryDb?: FactoryDb;
@@ -52,12 +52,24 @@ async function readFromDisk(): Promise<FactoryDb> {
     const raw = await fs.readFile(DB_PATH, "utf8");
     const parsed = JSON.parse(raw) as FactoryDb;
     const fresh = freshDb();
+    const savedAgents = Array.isArray(parsed.agents) && parsed.agents.length ? parsed.agents : fresh.agents;
+    // v3 introduced opt-in specialists. Backfill them once, leaving saved agents untouched.
+    const savedIds = new Set(savedAgents.map((agent) => agent.id));
+    const needsBackfill = (parsed.version ?? 1) < 3;
+    const agents = needsBackfill
+      ? [
+          ...savedAgents,
+          ...fresh.agents.filter(
+            (agent) => SPECIALIST_AGENT_IDS.includes(agent.id) && !savedIds.has(agent.id),
+          ),
+        ]
+      : savedAgents;
     return {
       ...fresh,
       ...parsed,
       version: DB_VERSION,
       settings: { ...fresh.settings, ...parsed.settings },
-      agents: Array.isArray(parsed.agents) && parsed.agents.length ? parsed.agents : fresh.agents,
+      agents,
       canvasTopology: parsed.canvasTopology ?? null,
       activeTopology:
         "activeTopology" in parsed

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getDb, updateDb, projectThreadMessages } from "@/lib/data/db";
-import { readFileSync } from "node:fs";
+import { defaultAgents, SPECIALIST_AGENT_IDS } from "@/lib/core/constants";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 describe("projectThreadMessages", () => {
@@ -48,5 +49,36 @@ describe("db persistence", () => {
     delete globalStore.__factoryWriteChain;
     const reloaded = await getDb();
     expect((reloaded.settings as any).testMarker).toBe(marker);
+  });
+
+  it("ships opt-in specialists that are disabled by default", () => {
+    const specialists = defaultAgents("heavy", "light").filter((agent) =>
+      SPECIALIST_AGENT_IDS.includes(agent.id),
+    );
+    expect(specialists).toHaveLength(8);
+    expect(specialists.every((agent) => !agent.enabled)).toBe(true);
+    expect(specialists.every((agent) => agent.systemPrompt.length > 200)).toBe(true);
+    expect(new Set(specialists.map((agent) => agent.handle)).size).toBe(8);
+  });
+
+  it("backfills specialists into existing databases without changing saved agents", async () => {
+    const dataRoot = process.env.FACTORY_DATA_ROOT!;
+    const dbPath = path.join(dataRoot, "factory.json");
+    const existing = JSON.parse(readFileSync(dbPath, "utf8"));
+    const coreOnly = defaultAgents("heavy", "light").filter(
+      (agent) => !SPECIALIST_AGENT_IDS.includes(agent.id),
+    );
+    existing.version = 2;
+    existing.agents = coreOnly.map((agent) => ({ ...agent, name: `Saved ${agent.name}` }));
+    writeFileSync(dbPath, JSON.stringify(existing));
+
+    const globalStore = globalThis as any;
+    delete globalStore.__factoryDb;
+    delete globalStore.__factoryWriteChain;
+    const reloaded = await getDb();
+    const savedSpecialists = reloaded.agents.filter((agent) => SPECIALIST_AGENT_IDS.includes(agent.id));
+    expect(savedSpecialists).toHaveLength(8);
+    expect(savedSpecialists.every((agent) => !agent.enabled)).toBe(true);
+    expect(reloaded.agents.some((agent) => agent.name.startsWith("Saved "))).toBe(true);
   });
 });

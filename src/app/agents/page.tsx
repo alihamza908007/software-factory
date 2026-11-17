@@ -22,7 +22,7 @@ import {
 import { toast } from "sonner";
 import { useFactory } from "@/lib/data/store";
 import type { Agent, AgentMetric } from "@/lib/core/types";
-import { AGENT_PALETTE } from "@/lib/core/constants";
+import { AGENT_PALETTE, SPECIALIST_AGENT_IDS } from "@/lib/core/constants";
 import { cn, formatCost, formatDuration, formatMB, formatTokens, timeAgo } from "@/lib/core/utils";
 import { PageHeader, SectionLabel } from "@/components/shared/page-header";
 import { AgentAvatar, AgentIcon } from "@/components/shared/agent-avatar";
@@ -85,6 +85,7 @@ export default function AgentsPage() {
   const [deleting, setDeleting] = useState<Agent | null>(null);
   const [providerFilter, setProviderFilter] = useState("all");
   const [testingAgent, setTestingAgent] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("agent");
@@ -196,6 +197,31 @@ export default function AgentsPage() {
     }
   }
 
+  async function applySelection(activeIds: Set<string>) {
+    setBulkBusy(true);
+    try {
+      const changed = agents.filter((agent) => agent.enabled !== activeIds.has(agent.id));
+      await Promise.all(
+        changed.map(async (agent) => {
+          const res = await fetch(`/api/agents/${agent.id}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ enabled: activeIds.has(agent.id) }),
+          });
+          if (!res.ok) throw new Error((await res.json()).error ?? `Could not update ${agent.name}.`);
+          const data = (await res.json()) as { agent: Agent };
+          updateAgentLocal(data.agent);
+        }),
+      );
+      toast.success("Factory roster updated.");
+    } catch (error) {
+      toast.error(String(error));
+      await fetchAgents();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function deleteAgent() {
     if (!deleting) return;
     try {
@@ -254,6 +280,39 @@ export default function AgentsPage() {
         </div>
       </div>
 
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-secondary/40 px-3 py-2">
+        <span className="text-xs font-medium">Factory roster</span>
+        <span className="text-xs text-muted-foreground">
+          {agents.filter((agent) => agent.enabled).length} of {agents.length} active
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={bulkBusy}
+            onClick={() => void applySelection(new Set(agents.map((agent) => agent.id)))}
+          >
+            Enable all
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={bulkBusy}
+            onClick={() =>
+              void applySelection(
+                new Set(
+                  agents
+                    .filter((agent) => !SPECIALIST_AGENT_IDS.includes(agent.id))
+                    .map((agent) => agent.id),
+                ),
+              )
+            }
+          >
+            Core only
+          </Button>
+        </div>
+      </div>
+
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative max-w-sm flex-1">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -298,17 +357,21 @@ export default function AgentsPage() {
                     <div className="flex items-center gap-2">
                       <h3 className="truncate text-sm font-semibold">{agent.name}</h3>
                       <span className="font-mono text-xs text-muted-foreground">@{agent.handle}</span>
+                      {SPECIALIST_AGENT_IDS.includes(agent.id) && <Badge variant="outline">optional</Badge>}
                       {!agent.enabled && <Badge variant="outline">paused</Badge>}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {agent.role}
                     </div>
                   </div>
-                  <Switch
-                    checked={agent.enabled}
-                    onCheckedChange={(enabled) => void toggleAgent(agent, enabled)}
-                    aria-label={`Toggle ${agent.name}`}
-                  />
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className="eyebrow">In factory</span>
+                    <Switch
+                      checked={agent.enabled}
+                      onCheckedChange={(enabled) => void toggleAgent(agent, enabled)}
+                      aria-label={`Toggle ${agent.name}`}
+                    />
+                  </div>
                 </div>
 
                 <p className="mt-3 line-clamp-2 min-h-[32px] text-[11px] leading-relaxed text-muted-foreground">
