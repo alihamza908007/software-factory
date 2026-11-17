@@ -19,7 +19,7 @@ import { ensureValidatorRuntime, verifyProjectRuntime } from "@/lib/mesh/validat
 import { decomposeProjectTask, type DecomposedTask } from "@/lib/pipeline/decomposer";
 import { negotiateTaskOwnership } from "@/lib/mesh/negotiation";
 
-import { executeCanvasTopology } from "@/lib/pipeline/scheduler";
+import { executeCanvasTopology, type DagResumeOptions } from "@/lib/pipeline/scheduler";
 
 import { activeRuns, resolveAgents, publishSnapshot, logPhase, guardHandoff, setPhase, beginPhase, finishPhase, addArtifact, publishArtifactEvent, assertActive } from "./shared";
 
@@ -131,8 +131,24 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       await beginPhase(runId, "implementation", developer.id);
       await performDependencyHandshake(runId, project, root, developer, controller.signal);
       await logPhase(runId, "implementation", "info", "Executing the exported canvas topology as this run's SDLC graph.");
-      const executeGraph = () => executeCanvasTopology(run.options.pipelineTopology!, {
+      const topology = run.options.pipelineTopology!;
+      const rerunClosure = (failedIds: string[]) => {
+        const rerun = new Set(failedIds);
+        let changed = true;
+        while (changed) {
+          changed = false;
+          for (const edge of topology.edges ?? []) {
+            if (rerun.has(edge.source) && !rerun.has(edge.target)) {
+              rerun.add(edge.target);
+              changed = true;
+            }
+          }
+        }
+        return rerun;
+      };
+      const executeGraph = (resume?: DagResumeOptions) => executeCanvasTopology(topology, {
         signal: controller.signal,
+        resume,
         initialInput: run.prompt,
         projectDir: root,
         projectId: project.id,
@@ -193,7 +209,16 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
         );
         const repaired = repair.files.length ? await applyFileBlocks(root, repair.files) : { written: [], errors: [] };
         if (!repaired.written.length) break;
-        graph = await executeGraph();
+        const failedNodes = graph.nodes
+          .filter((node) => node.status === "failed" || node.status === "blocked")
+          .map((node) => node.id);
+        await logPhase(
+          runId,
+          "implementation",
+          "info",
+          `Re-running ${failedNodes.length} failed node(s) plus downstream dependants; other nodes reuse their output.`,
+        );
+        graph = await executeGraph({ outputs: graph.outputs, rerun: rerunClosure(failedNodes) });
       }
       if (!graph.ok) {
         const detail = graph.errors.map((error) => `${error.nodeId}: ${error.error}`).join("; ") || "one or more nodes were blocked";
@@ -574,7 +599,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       item.artifacts.summary = `Built ${project.name} with ${finalFiles.length} files, ${healCount} self-heal attempt(s), branch ${finalGit.branch ?? item.git.branch}.`;
     });
     const finalRun = await getRun(runId);
-    if (finalRun) {
+    if (finalRun && finalRun.status !== "cancelled") {
       runEvents.publish(runId, { type: "snapshot", run: finalRun });
       runEvents.publish(runId, { type: "done", runId, status: "passed" });
     }
@@ -641,6 +666,7 @@ export async function startRun(input: {
       maxHealAttempts: input.maxHealAttempts ?? settings.maxHealAttempts,
       allowConcurrency: input.allowConcurrency ?? false,
       pushToGitHub: input.pushToGitHub ?? false,
+      engine: input.pipelineTopology ? "canvas" : "standard",
       pipelineTopology: input.pipelineTopology,
     },
     createdAt: Date.now(),
@@ -681,7 +707,17 @@ export async function resumeRun(runId: string): Promise<Run> {
   if (run.status !== "recoverable_paused" && run.status !== "interrupted") {
     throw new Error("Only a run paused by a server restart can be resumed here.");
   }
-  const phaseId = run.currentPhase ?? "requirements";
+  const storedPhase = run.currentPhase ?? "requirements";
+  const firstIncomplete = run.phases.find(
+    (phase) => phase.status !== "passed" && phase.status !== "skipped",
+  )?.id;
+  const resumeTarget = firstIncomplete ?? storedPhase;
+  // Canvas runs cannot resume mid-way through the legacy phases; restarting at
+  // implementation keeps them on the DAG engine instead of silently switching.
+  const phaseId =
+    run.options.engine === "canvas" && (resumeTarget === "testing" || resumeTarget === "deployment")
+      ? "implementation"
+      : resumeTarget;
   const controller = new AbortController();
   activeRuns.set(runId, { controller, cancelled: false });
   await updateRun(runId, (item) => {

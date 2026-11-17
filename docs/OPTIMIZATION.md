@@ -1,62 +1,50 @@
 # Flow optimization notes
 
 Audit of the end-to-end flow (run launch → phases → guardrails → repair → delivery, chat/mesh
-routing, and the data/state layer). Each finding is tagged with the risk of changing it.
+routing, and the data/state layer). All items from the first audit pass have now been addressed.
 
-## Applied (low-risk batch)
+## Done
 
-| Change | Why |
-| --- | --- |
-| Single `uid("log")` per log line | Stored and streamed logs previously had different IDs. |
-| Skip negotiation/decomposition for canvas runs | Those phases are marked `skipped` on the DAG path, so the work was wasted. |
-| Honor the per-run **self-heal budget** in all repair loops | The New-run control had no effect; loops used the global setting. |
-| Honor **Push & draft PR** | The dialog toggle was ignored; push was gated only on stored credentials. |
-| `Map` for runs in `/api/projects`, metrics/models in Agents | Removes O(n×m) scans. |
-| Single workspace scan for chat history, cached tree per turn | Chat rescanned the workspace up to four times per turn. |
-| Drop the duplicated user message from chat prompts | It was appended to history and appended again by `chatPrompt`. |
-| Send token deltas (not full text) on reroute/recovery | Avoided quadratic payload growth per streamed answer. |
-| Enabled-only agent fallbacks and mention chips | Disabled agents could be selected or shown before the late guard. |
-| Abort special-case in chat | Stop no longer persists "Generation failed: Aborted". |
-| View-run action on the autonomous-run toast | Chat previously only said "Watch the agents in the Pipeline view". |
-| Tear down the mesh stream on shell unmount | `disconnectMesh()` existed but was never called. |
-| Remove duplicate page-load fetches | `refreshAll()` already loads projects and canvas. |
-| Compact DB writes; fix stale pending write on reset | Full pretty-printed rewrite on every log line; reset could be overwritten. |
+### Run / pipeline
+- **Verification reuse.** A per-run cache keyed by a workspace content fingerprint lets
+  testing and deployment reuse an earlier passing build/test result when no source file changed.
+  `writeProjectFile` now invalidates the workspace listing cache immediately, and the
+  package-manifest shared-cache entry is cleared when the manifest is rewritten.
+- **Lint + tests run concurrently by default**, both in the engine and the New Run dialog.
+- Skip negotiation/decomposition for canvas runs; honor the per-run heal budget and the
+  Push & draft PR toggle.
+- **Incremental DAG repair.** On a canvas repair pass only failed/blocked nodes and their
+  downstream dependants are re-executed; all other nodes reuse their previous output.
+- **Resume correctness.** `finishPhase` advances `currentPhase`, resume prefers the first
+  incomplete phase, and runs carry an engine marker so a canvas run can never silently
+  resume through the legacy five-phase engine.
+- Single log ID per line; cancel no longer emits a second terminal event.
 
-## Remaining opportunities
+### Chat / mesh
+- **Prompt compaction.** The injected roster is now a compact handle/name/role list, the
+  duplicated guardrail block was removed, the supervisor no longer embeds a second roster,
+  and handoff file trees are capped at 40 paths.
+- **Event durability.** Validation completes before the stream closes, and routing,
+  guardrail/handoff and dead-loop notices are persisted as system messages so they survive
+  the client's thread refetch.
+- User message is no longer duplicated in each prompt; reroute tokens stream as deltas;
+  disabled agents are excluded from fallbacks and chips; abort no longer persists an error;
+  `NEXT_AGENT:` directives are honored; tokens include handoffs.
+- **Real dead-loop detection.** A coarse, punctuation-insensitive progress hash replaces the
+  hard-coded `progressed: true`, and the trace is no longer reset at the start of every turn.
+- `parseMentions` ignores fenced/inline code and emails.
 
-### High value, medium risk
-- **Reuse verification results across phases.** `verifyProjectRuntime` (implementation),
-  `runVerification` (testing) and `runBuild` (deployment) run the same build/test suite up to
-  three times per run. Share one digest with a per-run cache.
-- **Compact prompts.** The agent roster and guardrails are injected on every model call, the
-  supervisor embeds the roster again in the user message, and handoff prompts render up to 120
-  absolute file paths. A condensed roster + relevant-files-only tree would cut token spend.
-- **Validate once per artifact batch, off the critical path.** Background Silent Witness LLM
-  calls compete with generations for the VRAM queue. Coalesce artifacts and disable during runs.
-- **Reduce the 7 s `/api/health` poll.** It spawns `vm_stat`, probes three providers and
-  recomputes static hardware facts. Cache static facts and drop the duplicate `os.cpus()`.
-- **Per-turn context object.** Settings, agents, roster prompt, file tree and project spec are
-  re-derived in each layer. Build once and thread it through generation/handoff/validation.
+### Data / system
+- Health: static hardware facts and `vm_stat` output are cached; the client polls health every
+  20 s (runs still 7 s). Map lookups replace O(n×m) scans; duplicate page-load fetches removed;
+  mesh stream torn down on unmount; compact DB writes with a safe reset path.
 
-### High value, high risk (architectural)
-- **Incremental DAG repair.** Canvas repair currently re-executes every node up to four times.
-  Re-run only failed and downstream nodes with cached outputs.
-- **Durable phase checkpoints.** Resume restarts the whole current phase. Persist generated
-  files, verification result and git commit at phase boundaries, then replay on resume.
-- **Advance `currentPhase` on `finishPhase` and tag runs with their engine kind.** A crash
-  between phases can re-run a passed phase; a canvas run paused in testing can silently resume
-  through the legacy five-phase engine.
-- **Unify chat SSE and the mesh bus into one ordered, resumable event stream.** Today routing
-  and handoff frames are transient and disappear when the client refetches the thread, and
-  validation events are sent after the stream closes so they never reach the UI.
-- **Real dead-loop detection.** The `progressed` flag is hard-coded to `true`, so only exact
-  payload hashes count; chat also resets the trace every turn.
+## Remaining architectural work
 
-### Small correctness gaps
-- `finishPhase(..., "failed")` no longer reports 100% progress; failed phases now keep their
-  progress. (Applied.)
-- Cancel emits two terminal events (`cancelRun` and `executeRun`'s catch). De-duplicate.
-- `NEXT_AGENT:` is emitted by the supervisor prompt but never parsed by the router.
-- `parseMentions` matches `@` inside code blocks and emails; unknown handles can add an agent
-  to the wave.
-- Token counts in the chat header exclude handoff messages.
+- **Durable phase checkpoints.** Resume still restarts the current phase rather than replaying
+  a saved file bundle / verification result / git commit hash.
+- **Unify chat SSE and the mesh bus** into one ordered, resumable stream with sequence numbers.
+  Transient control frames are now persisted, but replay/resume across a disconnect is still
+  not supported.
+- **Scope dead-loop freezing to the offending branch** instead of aborting the whole wave.
+- **Capability inference** still derives partly from full system prompts, inflating scores.

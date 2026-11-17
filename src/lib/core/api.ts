@@ -25,7 +25,12 @@ export function sseHeaders(): HeadersInit {
 }
 
 export function parseMentions(text: string): string[] {
-  const matches = text.matchAll(/@([a-zA-Z0-9._-]+)/g);
+  // Ignore fenced code and inline code: a decorator, email or @types package
+  // inside a snippet must never be treated as a routing instruction.
+  const withoutCode = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`[^`\n]*`/g, " ");
+  const matches = withoutCode.matchAll(/(?:^|[\s(])@([a-zA-Z0-9_-]+)(?![a-zA-Z0-9._-])/g);
   return Array.from(new Set(Array.from(matches, (match) => match[1].toLowerCase())));
 }
 

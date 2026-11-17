@@ -30,7 +30,7 @@ export function GlobalRunLauncher() {
   const [prompt, setPrompt] = useState("");
   const [attempts, setAttempts] = useState(3);
   const [push, setPush] = useState(false);
-  const [allowConcurrency, setAllowConcurrency] = useState(false);
+  const [allowConcurrency, setAllowConcurrency] = useState(true);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");

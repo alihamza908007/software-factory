@@ -166,12 +166,23 @@ export async function finishPhase(
   status: "passed" | "failed" | "skipped",
   error?: string,
 ) {
+  const phaseOrder = PHASES.map((phase) => phase.id);
   await setPhase(runId, phaseId, {
     status,
     ...(status === "failed" ? {} : { progress: 100 }),
     completedAt: Date.now(),
     error,
   });
+  const run = await getRun(runId);
+  if (run && status !== "failed") {
+    const next = phaseOrder[phaseOrder.indexOf(phaseId) + 1] ?? null;
+    if (run.currentPhase !== next) {
+      await updateRun(runId, (item) => {
+        item.currentPhase = next;
+      });
+      await publishSnapshot(runId);
+    }
+  }
 }
 
 export async function addArtifact(runId: string, artifact: string) {

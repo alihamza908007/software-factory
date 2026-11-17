@@ -11,7 +11,7 @@ import {
 } from "@/lib/data/db";
 import { generateWithAgent } from "@/lib/providers/router";
 import { chatPrompt, handoffPrompt } from "@/lib/pipeline/prompts";
-import { correctiveInstruction, resetGuardrailTrace, validateAgentHandoff } from "@/lib/pipeline/guardrails";
+import { correctiveInstruction, validateAgentHandoff } from "@/lib/pipeline/guardrails";
 import { parseMentions, readJson, sseChunk, sseHeaders } from "@/lib/core/api";
 import { startRun } from "@/lib/pipeline/engine";
 import { applyFileBlocks, parseFileBlocks } from "@/lib/pipeline/parse";
@@ -71,6 +71,7 @@ export async function runChatTurn(params: {
 }): Promise<void> {
   const { body, request, controller } = params;
       let closed = false;
+      const pendingValidation: Promise<void>[] = [];
       const send = (event: string, data: unknown) => {
         if (closed) return;
         try {
@@ -109,6 +110,18 @@ export async function runChatTurn(params: {
           };
           await createThread(thread);
         }
+        const persistSystemNote = async (content: string, extra?: Partial<ChatMessage>) => {
+          await appendThreadMessage(thread!.id, {
+            id: uid("msg"),
+            role: "system",
+            content,
+            createdAt: Date.now(),
+            ...extra,
+          });
+        };
+        const queueSystemNote = (content: string, extra?: Partial<ChatMessage>) => {
+          pendingValidation.push(persistSystemNote(content, extra));
+        };
         // The thread owns the project context when a follow-up message omits it.
         body.projectId = body.projectId ?? thread.projectId;
         send("thread", { threadId: thread.id, projectId: body.projectId });
@@ -190,6 +203,7 @@ export async function runChatTurn(params: {
           })).values());
         }
         if (mentions.length) {
+          queueSystemNote(`Routed the task to ${targets.map((agent) => agent.name).join(", ")}.`);
           send("routing", {
             from: "You",
             to: targets.map((agent) => agent.name).join(", "),
@@ -238,7 +252,6 @@ export async function runChatTurn(params: {
             }
           }
         }
-        resetGuardrailTrace(thread.id);
         const visited = new Map<string, number>();
         const visitCap = (agentId: string) => (agentId === supervisor?.id ? 2 : 1);
         const scheduled = new Set(targets.map((agent) => agent.id));
@@ -600,7 +613,10 @@ export async function runChatTurn(params: {
                     threadId: thread.id,
                     projectId: body.projectId,
                   });
-                  const mentionedAgents = resolveAgentHandles(agents, parseMentions(responseText), `${body.message.trim()}\n${responseText}`).agents;
+                  const nextAgentDirective = responseText.match(/^\s*NEXT_AGENT\s*:\s*@?([a-zA-Z0-9_-]+)/im)?.[1]?.toLowerCase();
+                  const mentionHandles = parseMentions(responseText);
+                  if (nextAgentDirective && !mentionHandles.includes(nextAgentDirective)) mentionHandles.push(nextAgentDirective);
+                  const mentionedAgents = resolveAgentHandles(agents, mentionHandles, `${body.message.trim()}\n${responseText}`).agents;
                   const metrics = {
                     modelKey: outcome.model.key,
                     ttftMs: outcome.metric.ttftMs,
@@ -722,7 +738,7 @@ export async function runChatTurn(params: {
                       errors: artifactErrors,
                     });
 
-                    void (async () => {
+                    pendingValidation.push((async () => {
                       try {
                         const report = await validateArtifactsOnce(
                           artifacts.map((file) => ({ path: file.path, content: file.content })),
@@ -768,7 +784,7 @@ export async function runChatTurn(params: {
                           });
                         } catch {}
                       }
-                    })();
+                    })());
                   }
                   setMeshAgentStatus(item.agent.id, postFlight.passed ? "idle" : "error", postFlight.passed ? "Response complete" : "Post-flight blocked");
                   meshBus.publish({
@@ -879,6 +895,7 @@ export async function runChatTurn(params: {
                           detail: verdict.deadLoop.message,
                           verdict,
                         });
+                        queueSystemNote(`Dead-loop guard stopped the handoff to ${nextAgent.name}: ${verdict.deadLoop.message}`, { error: true });
                         send("dead_loop", { result: verdict, deadLoop: verdict.deadLoop });
                         send("error", {
                           message: `${verdict.deadLoop.message}\nResolution path: ${resolutionPath}`,
@@ -959,6 +976,7 @@ export async function runChatTurn(params: {
                           workspaceRoot: workspaceSnapshot?.workspaceRoot,
                         },
                       });
+                      queueSystemNote(`Guardrail ${verdict.score}/100 · handoff from ${item.agent.name} to ${nextAgent.name}.`);
                       send("handoff", {
                         from: item.agent.name,
                         to: nextAgent.name,
@@ -1026,6 +1044,7 @@ export async function runChatTurn(params: {
           );
         }
 
+        await Promise.allSettled(pendingValidation);
         send("done", {});
         close();
       } catch (error) {

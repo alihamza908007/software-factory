@@ -69,6 +69,21 @@ describe("classifyHandoff", () => {
     expect(third.deadLoop.detected).toBe(true);
   });
 
+  it("detects a dead loop when wording changes but the payload does not progress", () => {
+    const traceKey = "dead-loop-wording-trace";
+    resetGuardrailTrace(traceKey);
+    const variants = [
+      "## Handoff\n\n- item\n\n```ts path=a.ts\nx\n```",
+      "## Handoff!\n\n- item\n\n```ts path=a.ts\nx\n```",
+      "## Handoff??\n\n- item\n\n```ts path=a.ts\nx\n```",
+    ];
+    for (const payload of variants.slice(0, 2)) {
+      classifyHandoff({ sourceAgent: source, targetAgent: target, payload, traceKey, stage: "chat" });
+    }
+    const third = classifyHandoff({ sourceAgent: source, targetAgent: target, payload: variants[2], traceKey, stage: "chat" });
+    expect(third.deadLoop.detected).toBe(true);
+  });
+
   it("resetGuardrailTrace clears the dead-loop window", () => {
     const traceKey = "reset-trace";
     const payload = "## Handoff\n\n- item\n\n```ts path=a.ts\nx\n```";

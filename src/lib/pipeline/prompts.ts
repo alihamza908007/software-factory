@@ -3,7 +3,6 @@ import type { ProviderMessage } from "@/lib/providers/ollama";
 import { compactAgentContext } from "@/lib/mesh/context-manager";
 import type { TaskContract } from "@/lib/mesh/accountability";
 import { contractPrompt } from "@/lib/mesh/accountability";
-import { buildAgentRoster } from "@/lib/mesh/router";
 
 const CHAT_HISTORY_BUDGET = 12_000;
 
@@ -262,9 +261,7 @@ export function handoffPrompt(
   const supervisorDirective = isSupervisor
     ? `
 CONTENT-FIRST SUPERVISOR REVIEW:
-Read the specialist's actual report below before responding. State its concrete findings; do not replace it with a generic status such as "inspect the artifacts". Decide whether a specific follow-up is needed. If it is, name exactly one qualified recipient from this active roster and give an actionable task. If no follow-up is needed, explain why.
-ACTIVE AGENT ROSTER (handles are exact):
-${JSON.stringify(buildAgentRoster(activeAgents), null, 2)}
+Read the specialist's actual report below before responding. State its concrete findings; do not replace it with a generic status such as "inspect the artifacts". Decide whether a specific follow-up is needed. If it is, name exactly one qualified recipient from the active roster supplied with your instructions and give an actionable task. If no follow-up is needed, explain why.
 When a follow-up is needed, include these exact machine-readable lines in your response:
 NEXT_AGENT: @exact-handle
 NEXT_TASK: one concrete task
@@ -283,8 +280,9 @@ ${isSupervisor ? previousOutput.slice(0, 12_000) : compactAgentContext(previousO
 
 AUTHORITATIVE WORKSPACE STATE:
 Workspace root: ${workspaceSnapshot?.workspaceRoot ?? "No project workspace attached"}
-File tree:
-${workspaceSnapshot?.fileTree.map((file) => `${workspaceSnapshot.workspaceRoot}/${file}`).join("\n") || "(no workspace snapshot available)"}
+File tree (first 40 paths; use the workspaceRoot to locate the rest):
+${workspaceSnapshot?.fileTree.slice(0, 40).map((file) => `${workspaceSnapshot.workspaceRoot}/${file}`).join("\n") || "(no workspace snapshot available)"}
+${workspaceSnapshot && workspaceSnapshot.fileTree.length > 40 ? `… and ${workspaceSnapshot.fileTree.length - 40} more paths` : ""}
 
 Before accepting implementation/build work, check route-extension conflicts and required project configuration. If blocked, provide a concrete resolutionPath and do not merely report a warning.
 ${supervisorDirective}

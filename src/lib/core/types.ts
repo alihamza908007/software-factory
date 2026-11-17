@@ -211,6 +211,7 @@ export interface Run {
     allowConcurrency: boolean;
     pushToGitHub: boolean;
     skipDeployment?: boolean;
+    engine?: "canvas" | "standard";
     pipelineTopology?: CanvasTopology;
   };
   error?: string;
@@ -353,6 +354,7 @@ export interface HandoffTraceStep {
   payloadHash: string;
   at: number;
   progressed: boolean;
+  progressHash?: string;
 }
 
 export interface DeadLoopInfo {

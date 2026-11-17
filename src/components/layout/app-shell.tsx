@@ -89,12 +89,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshAll();
     connectMesh();
-    const interval = setInterval(() => {
-      void fetchHealth();
-      void fetchRuns();
-    }, 7000);
+    const interval = setInterval(() => void fetchRuns(), 7000);
+    const healthInterval = setInterval(() => void fetchHealth(), 20_000);
     return () => {
       clearInterval(interval);
+      clearInterval(healthInterval);
       disconnectMesh();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

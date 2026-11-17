@@ -21,6 +21,7 @@ import { inferResolutionPath, meshBus, publishAgentEnvelope, setMeshAgentStatus 
 import { listWorkspaceFiles, resolveInside } from "@/lib/data/workspace";
 import { completeTaskStorage, ensureStorageLifecycle } from "@/lib/runtime/system/storage-cleaner";
 import { ensureAnalyticsRuntime, recordContribution, recordPostFlightResult } from "@/lib/mesh/analytics";
+import { getCachedVerification, setCachedVerification, workspaceFingerprint } from "@/lib/data/verification-cache";
 import { sharedCache } from "@/lib/mesh/shared-cache";
 
 export interface ValidationArtifact {
@@ -53,6 +54,19 @@ export async function verifyProjectRuntime(input: {
 }): Promise<RuntimeValidationResult> {
   const project = await getProject(input.projectId);
   if (!project) throw new Error("Runtime validation requires an existing managed project.");
+  const fingerprint = input.runId ? await workspaceFingerprint(project.workspacePath) : "";
+  const cached = fingerprint ? getCachedVerification(input.runId!, fingerprint) : undefined;
+  if (cached) {
+    const detail = cached.results.map((result) => `$ ${result.command} · exit ${result.exitCode}\n${result.stderr || result.stdout}`).join("\n\n").slice(-20_000);
+    const proof = cached.failed ? undefined : {
+      commandExecuted: cached.results.map((result) => result.command).join(" && "),
+      exitCode: 0,
+      stdout: cached.results.map((result) => result.stdout).join("\n").slice(-20_000),
+      stderr: cached.results.map((result) => result.stderr).join("\n").slice(-20_000),
+      timestamp: new Date().toISOString(),
+    };
+    return { passed: !cached.failed, results: cached.results, proof, detail };
+  }
   const results: CommandResult[] = [];
   const packagePath = path.join(project.workspacePath, "package.json");
   const packageCacheKey = `workspace:${project.workspacePath}:package.json`;
@@ -102,6 +116,7 @@ export async function verifyProjectRuntime(input: {
   const passed = results.length > 0 && results.every((result) => result.exitCode === 0 && !result.timedOut);
   const detail = results.map((result) => `$ ${result.command} · exit ${result.exitCode}\n${result.stderr || result.stdout}`)
     .join("\n\n").slice(-20_000);
+  if (fingerprint) setCachedVerification(input.runId!, fingerprint, results, !passed);
   if (!passed) {
     const fileTree = await listWorkspaceFiles(project.workspacePath, 160);
     const resolutionPath = inferResolutionPath(detail);

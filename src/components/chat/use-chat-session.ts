@@ -87,9 +87,7 @@ export function useChatSession() {
     () =>
       messages.reduce(
         (sum, message) =>
-          message.handoffFrom
-            ? sum
-            : sum + (message.metrics?.inputTokens ?? 0) + (message.metrics?.outputTokens ?? 0),
+          sum + (message.metrics?.inputTokens ?? 0) + (message.metrics?.outputTokens ?? 0),
         0,
       ),
     [messages],

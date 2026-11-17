@@ -11,18 +11,39 @@ export const dynamic = "force-dynamic";
 
 const execFileAsync = promisify(execFile);
 
+const staticHardware = (() => {
+  const cpus = os.cpus();
+  return {
+    platform: process.platform,
+    arch: process.arch,
+    cpu: cpus[0]?.model ?? "Apple Silicon",
+    cores: cpus.length,
+    totalMemoryMB: Math.round(os.totalmem() / 1024 ** 2),
+    unifiedMemory: process.arch === "arm64" && process.platform === "darwin",
+  };
+})();
+
+let memoryCache: { at: number; value: number } | undefined;
+
 async function availableMemoryMB(): Promise<number> {
-  if (process.platform !== "darwin") return Math.round(os.freemem() / 1024 ** 2);
-  try {
-    const { stdout } = await execFileAsync("vm_stat", [], { timeout: 1500 });
-    const pageSize = Number(stdout.match(/page size of (\d+) bytes/)?.[1] ?? 4096);
-    const pages = (label: string) =>
-      Number(stdout.match(new RegExp(`${label}:\\s+(\\d+)`))?.[1] ?? 0);
-    const available = pages("Pages free") + pages("Pages inactive") + pages("Pages speculative");
-    return Math.round((available * pageSize) / 1024 ** 2);
-  } catch {
-    return Math.round(os.freemem() / 1024 ** 2);
+  if (memoryCache && Date.now() - memoryCache.at < 10_000) return memoryCache.value;
+  let value: number;
+  if (process.platform !== "darwin") {
+    value = Math.round(os.freemem() / 1024 ** 2);
+  } else {
+    try {
+      const { stdout } = await execFileAsync("vm_stat", [], { timeout: 1500 });
+      const pageSize = Number(stdout.match(/page size of (\d+) bytes/)?.[1] ?? 4096);
+      const pages = (label: string) =>
+        Number(stdout.match(new RegExp(`${label}:\\s+(\\d+)`))?.[1] ?? 0);
+      const available = pages("Pages free") + pages("Pages inactive") + pages("Pages speculative");
+      value = Math.round((available * pageSize) / 1024 ** 2);
+    } catch {
+      value = Math.round(os.freemem() / 1024 ** 2);
+    }
   }
+  memoryCache = { at: Date.now(), value };
+  return value;
 }
 
 export async function GET() {
@@ -68,13 +89,8 @@ export async function GET() {
         cloudOnline: catalogue.opencodeOnline,
       },
       hardware: {
-        platform: process.platform,
-        arch: process.arch,
-        cpu: os.cpus()[0]?.model ?? "Apple Silicon",
-        cores: os.cpus().length,
-        totalMemoryMB: Math.round(os.totalmem() / 1024 ** 2),
+        ...staticHardware,
         freeMemoryMB,
-        unifiedMemory: process.arch === "arm64" && process.platform === "darwin",
       },
       process: {
         uptimeSec: Math.round(process.uptime()),

@@ -196,11 +196,15 @@ export function classifyHandoff(input: HandoffValidationInput): GuardrailResult 
   const score = Math.max(0, Math.min(100, Math.round(rawScore)));
   const passed = score >= threshold && !checks.some((check) => check.level === "fail");
   const payloadHash = hashPayload(payload);
+  const progressHash = hashPayload(
+    normalise(payload).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, "").replace(/\s+/g, " "),
+  );
   const deadLoop = detectDeadLoop({
     traceKey: input.traceKey,
     sourceAgent: input.sourceAgent.name,
     targetAgent: input.targetAgent.name,
     payloadHash,
+    progressHash,
     windowSize: input.windowSize,
     loopThreshold: input.loopThreshold,
   });
@@ -226,6 +230,8 @@ export function detectDeadLoop(input: {
   sourceAgent: string;
   targetAgent: string;
   payloadHash: string;
+  /** Coarse hash used to judge payload progress; ignores wording and punctuation. */
+  progressHash?: string;
   windowSize?: number;
   loopThreshold?: number;
 }): DeadLoopInfo {
@@ -242,12 +248,18 @@ export function detectDeadLoop(input: {
   const threshold = Math.max(2, input.loopThreshold ?? 3);
   const trace = store.traces.get(input.traceKey) ?? [];
   const transition = `${input.sourceAgent}→${input.targetAgent}`;
+  const progressHash = input.progressHash ?? input.payloadHash;
+  const previous = [...trace].reverse().find(
+    (item) => item.sourceAgent === input.sourceAgent && item.targetAgent === input.targetAgent,
+  );
+  const progressed = !previous || (previous.progressHash ?? previous.payloadHash) !== progressHash;
   const step: HandoffTraceStep = {
     sourceAgent: input.sourceAgent,
     targetAgent: input.targetAgent,
     payloadHash: input.payloadHash,
+    progressHash,
     at: Date.now(),
-    progressed: true,
+    progressed,
   };
   const next = [...trace, step].slice(-windowSize);
   store.traces.set(input.traceKey, next);
@@ -256,10 +268,10 @@ export function detectDeadLoop(input: {
     (item) =>
       item.sourceAgent === input.sourceAgent &&
       item.targetAgent === input.targetAgent &&
-      item.payloadHash === input.payloadHash,
+      (item as HandoffTraceStep).progressHash === progressHash,
   ).length;
 
-  const detected = occurrences >= threshold;
+  const detected = occurrences >= threshold && !progressed;
   return {
     detected,
     transition,

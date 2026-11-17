@@ -103,9 +103,20 @@ function assertAcyclic(nodes: DagNode[]): void {
  * (resourceQueue), so cloud branches are effectively unlimited while heavy
  * local models remain serialised.
  */
+export interface DagResumeOptions {
+  /** Outputs from a previous execution, keyed by node id. */
+  outputs: Record<string, unknown>;
+  /** Nodes that must run again. All other nodes reuse their cached output. */
+  rerun: Set<string>;
+}
+
 export async function executeDag(
   nodes: DagNode[],
-  options: { signal?: AbortSignal; emit?: (event: DagEvent) => void } = {},
+  options: {
+    signal?: AbortSignal;
+    emit?: (event: DagEvent) => void;
+    resume?: DagResumeOptions;
+  } = {},
 ): Promise<DagExecutionResult> {
   assertAcyclic(nodes);
   const startedAt = Date.now();
@@ -121,7 +132,7 @@ export async function executeDag(
       },
     ]),
   );
-  const outputs = new Map<string, unknown>();
+  const outputs = new Map<string, unknown>(Object.entries(options.resume?.outputs ?? {}));
   const errors: Array<{ nodeId: string; error: string }> = [];
   const emit = (event: DagEvent) => options.emit?.(event);
 
@@ -228,6 +239,24 @@ export async function executeDag(
   const done = new Set<string>();
   while (done.size < nodes.length) {
     if (options.signal?.aborted) throw new DOMException("DAG aborted", "AbortError");
+    for (const node of nodes) {
+      if (done.has(node.id)) continue;
+      if (options.resume && !options.resume.rerun.has(node.id)) {
+        const state = results.get(node.id)!;
+        state.status = "passed";
+        state.output = outputs.get(node.id);
+        done.add(node.id);
+        emit({
+          type: "complete",
+          nodeId: node.id,
+          label: node.label,
+          status: "passed",
+          detail: "Reusing output from the previous graph run.",
+          output: state.output,
+          at: Date.now(),
+        });
+      }
+    }
     const ready = nodes.filter((node) => {
       if (done.has(node.id)) return false;
       const state = results.get(node.id);
@@ -372,6 +401,7 @@ export async function executeCanvasTopology(
     projectId?: string;
     runId?: string;
     applyArtifacts?: boolean;
+    resume?: DagResumeOptions;
   } = {},
 ): Promise<DagExecutionResult> {
   const nodes = topology.nodes ?? [];
@@ -643,6 +673,7 @@ export async function executeCanvasTopology(
 
   return executeDag(dagNodes, {
     signal: options.signal,
+    resume: options.resume,
     emit: (event) => {
       if (event.type === "start" || event.type === "complete" || event.type === "failed" || event.type === "blocked") {
         const output = event.output as { score?: number } | undefined;

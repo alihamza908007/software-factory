@@ -1,12 +1,14 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { getSettings, listAgents, updateRun } from "@/lib/data/db";
+import { getCachedVerification, setCachedVerification, workspaceFingerprint } from "@/lib/data/verification-cache";
 
 import { generateWithAgent } from "@/lib/providers/router";
 import { correctiveInstruction } from "@/lib/pipeline/guardrails";
 import type { Agent, GuardrailResult, PhaseId, Project } from "@/lib/core/types";
 
 import { inspectWorkspaceHandshake, listWorkspaceFiles, preserveDuplicateRouteFiles, writeProjectFile } from "@/lib/data/workspace";
+import { sharedCache } from "@/lib/mesh/shared-cache";
 import { applyFileBlocks, parseFileBlocks, type ParsedFile } from "@/lib/pipeline/parse";
 import { dependencyHandshakeRepairPrompt } from "@/lib/pipeline/prompts";
 import { commitAll, readGitState } from "@/lib/runtime/tools/git";
@@ -47,6 +49,7 @@ export async function applyNodeManifest(root: string) {
   }
   if (usesEsm && !pkg.type) pkg.type = "module";
   await writeProjectFile(root, "package.json", `${JSON.stringify(pkg, null, 2)}\n`);
+  sharedCache.delete(`workspace:${root}:package.json`);
 }
 
 export function normalizeTestFiles(files: ParsedFile[], stack: Project["stack"]): ParsedFile[] {
@@ -97,8 +100,20 @@ export async function runVerification(
   stack: Project["stack"],
   phaseId: PhaseId,
   includeInstall = true,
-  allowConcurrency = false,
+  allowConcurrency = true,
 ) {
+  const fingerprint = await workspaceFingerprint(root);
+  const cached = getCachedVerification(runId, fingerprint);
+  if (cached) {
+    await logPhase(
+      runId,
+      phaseId,
+      "command",
+      "Reusing verification results from an earlier phase — workspace unchanged.",
+      cached.results.map((result) => `$ ${result.command} · exit ${result.exitCode}`).join("\n"),
+    );
+    return { results: cached.results, failed: cached.failed };
+  }
   const settings = await getSettings();
   if (!settings.allowExecution) {
     await logPhase(
@@ -156,6 +171,7 @@ export async function runVerification(
   }
   const results = [...lint, ...tests];
   const failed = resultsFailed(results);
+  if (fingerprint) setCachedVerification(runId, fingerprint, results, failed);
   if (failed) {
     const fileTree = await listWorkspaceFiles(root, 160);
     const output = failureDigest(results, 12_000);

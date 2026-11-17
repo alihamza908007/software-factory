@@ -44,6 +44,7 @@ export async function writeProjectFile(
   const target = resolveInside(root, relative);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(target, content, "utf8");
+  invalidateWorkspaceCache(root);
   return path.relative(root, target);
 }
 
