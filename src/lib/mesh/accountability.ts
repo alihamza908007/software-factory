@@ -153,7 +153,10 @@ export function scopeHandoffCapabilities(source: Agent, objective: string): stri
 
 export function agentCapabilities(agent: Agent): string[] {
   const declared = (agent.capabilities ?? []).map((item) => item.toLowerCase());
-  const profile = `${agent.name} ${agent.handle} ${agent.role} ${agent.description} ${agent.systemPrompt} ${declared.join(" ")}`.toLowerCase();
+  // Identity fields only. The system prompt is deliberately excluded: task
+  // instructions mention many domains (tests, security, deployment) and would
+  // otherwise hand every agent a full capability set, defeating routing.
+  const profile = `${agent.name} ${agent.handle} ${agent.role} ${agent.description} ${declared.join(" ")}`.toLowerCase();
   const capabilities = new Set([
     ...declared,
     ...inferRequiredCapabilities(declared.join(" ")),

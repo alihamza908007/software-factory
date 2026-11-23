@@ -15,6 +15,12 @@ routing, and the data/state layer). All items from the first audit pass have now
   intentionally out of scope).
 - **Branch-scoped dead-loop freezing.** A detected loop now freezes only the offending handoff
   branch; sibling branches continue.
+- **Canvas resume replays node outputs.** The canvas branch saves the DAG node outputs to the
+  implementation checkpoint after the run passes; a resume at implementation replays them
+  instead of re-running the DAG.
+- **Capability inference no longer reads system prompts.** `agentCapabilities` scores from
+  declared capabilities, agent identity fields and the one-line role/description, so
+  long task instructions no longer hand every agent a full capability set.
 
 ### Run / pipeline
 - **Verification reuse.** A per-run cache keyed by a workspace content fingerprint lets
@@ -52,8 +58,5 @@ routing, and the data/state layer). All items from the first audit pass have now
 
 ## Remaining architectural work
 
-- Canvas runs still re-execute the DAG on resume; only the standard five-phase pipeline replays
-  saved phase checkpoints today.
 - A single unified endpoint for chat and mesh events (with server-side replay of chat turns
   across a full page reload) would require a durable event log, not just sequence ids.
-- Capability inference still derives partly from full system prompts, inflating scores.

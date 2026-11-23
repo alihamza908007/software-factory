@@ -202,6 +202,8 @@ export interface PhaseCheckpoint {
   architecture?: string;
   files?: Array<{ path: string; content: string }>;
   verification?: { results: CommandResult[]; failed: boolean };
+  /** Canvas runs: node outputs kept so a resume can replay instead of re-running the DAG. */
+  canvas?: { outputs: Record<string, unknown>; passed: string[] };
 }
 
 export interface Run {

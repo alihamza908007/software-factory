@@ -19,7 +19,7 @@ import { ensureValidatorRuntime, verifyProjectRuntime } from "@/lib/mesh/validat
 import { decomposeProjectTask, type DecomposedTask } from "@/lib/pipeline/decomposer";
 import { negotiateTaskOwnership } from "@/lib/mesh/negotiation";
 
-import { executeCanvasTopology, type DagResumeOptions } from "@/lib/pipeline/scheduler";
+import { executeCanvasTopology, type DagExecutionResult, type DagResumeOptions } from "@/lib/pipeline/scheduler";
 
 import { activeRuns, resolveAgents, publishSnapshot, logPhase, guardHandoff, setPhase, beginPhase, finishPhase, saveCheckpoint, addArtifact, publishArtifactEvent, assertActive } from "./shared";
 
@@ -123,6 +123,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       `Feature branch ${branches.branch} created from ${branches.baseBranch}.`,
     );
 
+    const checkpoints = run.checkpoints ?? {};
     if (run.options.pipelineTopology && phaseStartIndex <= 2) {
       await finishPhase(runId, "requirements", "skipped", "Replaced by the active custom DAG.");
       await finishPhase(runId, "architecture", "skipped", "Replaced by the active custom DAG.");
@@ -146,6 +147,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
         }
         return rerun;
       };
+      const savedCanvas = checkpoints.implementation?.canvas;
       const executeGraph = (resume?: DagResumeOptions) => executeCanvasTopology(topology, {
         signal: controller.signal,
         resume,
@@ -164,7 +166,19 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
           }
         },
       });
-      let graph = await executeGraph();
+      let graph: DagExecutionResult;
+      if (savedCanvas) {
+        // Replay the saved node outputs instead of re-running the whole DAG.
+        await logPhase(
+          runId,
+          "implementation",
+          "info",
+          `Restoring ${savedCanvas.passed.length} completed DAG node(s) from the saved implementation checkpoint.`,
+        );
+        graph = { ok: true, nodes: [], outputs: savedCanvas.outputs, errors: [], durationMs: 0 };
+      } else {
+        graph = await executeGraph();
+      }
       let graphRepair = 0;
       const graphRepairLimit = healLimit;
       while (!graph.ok && graphRepair < graphRepairLimit) {
@@ -278,6 +292,15 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       );
       await commitPhase(runId, root, `feat(${project.slug || "app"}): execute active SDLC DAG`, "implementation");
       await finishPhase(runId, "implementation", "passed");
+      if (!savedCanvas) {
+        await saveCheckpoint(runId, "implementation", {
+          at: Date.now(),
+          canvas: {
+            outputs: graph.outputs,
+            passed: graph.nodes.filter((node) => node.status === "passed").map((node) => node.id),
+          },
+        });
+      }
       const verification = await processTesting(
         runId,
         project,
@@ -345,7 +368,6 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       return;
     }
 
-    const checkpoints = run.checkpoints ?? {};
     const restoredSpec =
       checkpoints.requirements?.spec ?? checkpoints.architecture?.spec ?? checkpoints.implementation?.spec;
     let spec = restoredSpec ?? "";
