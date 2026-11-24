@@ -16,7 +16,7 @@ import type {
   Run,
 } from "@/lib/core/types";
 import type { HardwareOptimizationProfile } from "@/lib/runtime/system/hardware-profiler";
-import { normalizeAgentColor } from "@/lib/core/constants";
+import { MAX_STORED_RUNS, normalizeAgentColor } from "@/lib/core/constants";
 
 interface HealthPayload {
   ok: boolean;
@@ -319,7 +319,7 @@ export const useFactory = create<FactoryStore>()(
 
       fetchRuns: async () => {
         try {
-          const data = await getJson<{ runs: Run[] }>("/api/runs?limit=60");
+          const data = await getJson<{ runs: Run[] }>(`/api/runs?limit=${MAX_STORED_RUNS}`);
           set({ runs: data.runs });
         } catch (error) {
           set({ error: String(error) });

@@ -311,16 +311,16 @@ export function useChatSession() {
     if (event === "dead_loop") {
       const data = payload as { result?: GuardrailResult; deadLoop?: DeadLoopInfo };
       const info = data.deadLoop ?? data.result?.deadLoop;
-      setHandoff("Pipeline frozen");
+      setHandoff("Branch paused");
       toast.error("Dead loop detected", {
-        description: info?.message ?? "Pipeline frozen for user review.",
+        description: info?.message ?? "This branch paused for user review.",
       });
       setMessages((current) => [
         ...current,
         {
           id: `dead-loop-${Date.now()}`,
           role: "system",
-          content: `**Dead loop detected — pipeline frozen.** ${info?.message ?? ""}`,
+          content: `**Dead loop detected — branch paused.** ${info?.message ?? ""}`,
           createdAt: Date.now(),
           error: true,
         },

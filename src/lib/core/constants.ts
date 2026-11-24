@@ -65,6 +65,9 @@ export function createPhases(): PhaseState[] {
   }));
 }
 
+/** Newest runs retained in `.data/factory.json`; the client requests the same cap. */
+export const MAX_STORED_RUNS = 60;
+
 export const DEFAULT_SETTINGS: FactorySettings = {
   ollamaUrl: "http://127.0.0.1:11434",
   lmstudioUrl: "http://127.0.0.1:1234/v1",

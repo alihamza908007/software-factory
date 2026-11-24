@@ -1,4 +1,5 @@
 import { apiError, json } from "@/lib/core/api";
+import { isProjectBusy } from "@/lib/core/errors";
 import { getRun } from "@/lib/data/db";
 import { cancelRun, isRunActive, rerunPhase, resumeRun } from "@/lib/pipeline/engine";
 import type { PhaseId } from "@/lib/core/types";
@@ -41,7 +42,7 @@ export async function POST(
     }
     return json({ error: "Unknown action." }, { status: 400 });
   } catch (error) {
-    return apiError(error, 400);
+    return apiError(error, isProjectBusy(error) ? 409 : 400);
   }
 }
 

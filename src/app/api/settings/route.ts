@@ -126,12 +126,12 @@ export async function PATCH(request: Request) {
       }
     }
 
-    // Preserve compatibility with existing settings files created before the
-    // single heavy local slot became a fixed hardware guardrail.
-    patch.maxConcurrentHeavy = 1;
-    const merged = { ...current, ...patch, maxConcurrentHeavy: 1 };
+    const merged = { ...current, ...patch };
     if (merged.reserveMB >= merged.vramBudgetMB) {
       throw new Error("Reserve memory must be smaller than the VRAM budget.");
+    }
+    if (merged.maxConcurrentHeavy < 1 || merged.maxConcurrentHeavy > 4) {
+      throw new Error("Heavy model concurrency must be between 1 and 4.");
     }
     if (merged.maxConcurrentLight < 1 || merged.maxConcurrentLight > 4) {
       throw new Error("Light model concurrency must be between 1 and 4.");
@@ -150,6 +150,9 @@ export async function PATCH(request: Request) {
     }
     if (merged.maxHealAttempts < 0 || merged.maxHealAttempts > 8) {
       throw new Error("Self-heal attempts must be between 0 and 8.");
+    }
+    if (merged.commandTimeoutMs < 10_000 || merged.commandTimeoutMs > 900_000) {
+      throw new Error("Command timeout must be between 10 seconds and 15 minutes.");
     }
     if (merged.vramQueueTimeoutMs < 5_000) {
       throw new Error("Queue timeout must be at least 5 seconds.");

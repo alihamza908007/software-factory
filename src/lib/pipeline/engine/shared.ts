@@ -6,6 +6,7 @@ import { runEvents } from "@/lib/core/events";
 
 import { DeadLoopException, validateAgentHandoff } from "@/lib/pipeline/guardrails";
 import type { Agent, GuardrailResult, PhaseCheckpoint, PhaseId, Run } from "@/lib/core/types";
+import { ProjectBusyError } from "@/lib/core/errors";
 import { uid } from "@/lib/core/utils";
 
 import { learnFromFailure } from "@/lib/mesh/agent-memory";
@@ -14,8 +15,34 @@ import { meshBus } from "@/lib/mesh/event-bus";
 type ActiveRun = { controller: AbortController; cancelled: boolean };
 const globalStore = globalThis as typeof globalThis & {
   __factoryActiveRuns?: Map<string, ActiveRun>;
+  __factoryProjectLocks?: Map<string, string>;
 };
 export const activeRuns = (globalStore.__factoryActiveRuns ??= new Map<string, ActiveRun>());
+
+/**
+ * Two runs on the same project share one workspace and one feature branch, so
+ * concurrent execution interleaves file writes and phase commits. The lock is
+ * per project and lives for the lifetime of the process; a restart clears it.
+ */
+const projectLocks = (globalStore.__factoryProjectLocks ??= new Map<string, string>());
+
+export function acquireProjectLock(projectId: string, runId: string): void {
+  const holder = projectLocks.get(projectId);
+  if (holder && holder !== runId) {
+    throw new ProjectBusyError(
+      "This project already has an active run. Wait for it to finish or cancel it before starting another.",
+    );
+  }
+  projectLocks.set(projectId, runId);
+}
+
+export function releaseProjectLock(projectId: string, runId: string): void {
+  if (projectLocks.get(projectId) === runId) projectLocks.delete(projectId);
+}
+
+export function projectLockHolder(projectId: string): string | undefined {
+  return projectLocks.get(projectId);
+}
 
 export function phaseMeta(id: PhaseId) {
   return PHASES.find((phase) => phase.id === id)!;

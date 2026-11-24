@@ -62,7 +62,7 @@ class ResourceQueueManager {
       queued: this.queue.map((waiter) => waiter.reservation),
       history: this.history.slice(0, 30),
       heavyRunning: running.filter((item) => item.heavy).length,
-      maxConcurrentHeavy: profile.maxConcurrentHeavy,
+      maxConcurrentHeavy: this.lastMaxHeavy ?? settings.maxConcurrentHeavy,
       allowConcurrentLight: settings.allowConcurrentLight,
       updatedAt: Date.now(),
     };
@@ -77,9 +77,10 @@ class ResourceQueueManager {
     const lightRunning = Array.from(this.running.values()).filter(
       (item) => !item.heavy && (item.provider === "ollama" || item.provider === "lmstudio"),
     ).length;
-    // Heavy local generations are serialized for the 48 GB Apple Silicon target.
+    // Heavy local generations respect the user setting; the VRAM budget check
+    // below still prevents oversubscribing unified memory.
     const profile = getHardwareProfile();
-    const maxHeavy = profile.maxConcurrentHeavy;
+    const maxHeavy = this.lastMaxHeavy ?? 1;
     const maxLight = Math.min(this.lastMaxLight ?? profile.maxConcurrentLight, profile.maxConcurrentLight);
     const allowConcurrentLight = this.lastAllowConcurrentLight ?? true;
 
@@ -92,6 +93,7 @@ class ResourceQueueManager {
   }
 
   private lastBudgetMB?: number;
+  private lastMaxHeavy?: number;
   private lastMaxLight?: number;
   private lastAllowConcurrentLight?: boolean;
 
@@ -99,6 +101,7 @@ class ResourceQueueManager {
     const settings = await getSettings();
     const profile = getHardwareProfile();
     this.lastBudgetMB = Math.max(1024, Math.min(settings.vramBudgetMB - settings.reserveMB, profile.localBudgetMB));
+    this.lastMaxHeavy = Math.max(1, Math.min(settings.maxConcurrentHeavy, 4));
     this.lastMaxLight = Math.min(settings.maxConcurrentLight, profile.maxConcurrentLight);
     this.lastAllowConcurrentLight = settings.allowConcurrentLight;
   }

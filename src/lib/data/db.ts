@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { DEFAULT_SETTINGS, SPECIALIST_AGENT_IDS, defaultAgents } from "@/lib/core/constants";
+import { DEFAULT_SETTINGS, MAX_STORED_RUNS, SPECIALIST_AGENT_IDS, defaultAgents } from "@/lib/core/constants";
 import type {
   Agent,
   AgentMetric,
@@ -289,7 +289,7 @@ export async function saveRun(run: Run): Promise<Run> {
     if (index >= 0) db.runs[index] = run;
     else {
       db.runs.unshift(run);
-      if (db.runs.length > 40) db.runs = db.runs.slice(0, 40);
+      if (db.runs.length > MAX_STORED_RUNS) db.runs = db.runs.slice(0, MAX_STORED_RUNS);
     }
     return run;
   });

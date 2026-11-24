@@ -180,8 +180,8 @@ export default function PipelinePage() {
     });
     source.addEventListener("dead_loop", (event) => {
       const data = parse(event) as { deadLoop?: DeadLoopInfo } | null;
-      toast.error("Dead loop detected — pipeline frozen", {
-        description: data?.deadLoop?.message ?? "The same transition repeated without progress.",
+      toast.error("Dead loop detected — branch paused", {
+        description: data?.deadLoop?.message ?? "The same transition repeated without progress on this branch.",
       });
     });
     source.addEventListener("done", (event) => {

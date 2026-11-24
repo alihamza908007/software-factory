@@ -687,7 +687,7 @@ function PerformanceDialog({
   onClose: () => void;
   metrics: AgentMetric[];
 }) {
-  const { models } = useFactory();
+  const { models, agents, settings } = useFactory();
   const model = agent ? models.find((item) => item.key === agent.modelKey) : undefined;
   const avg = (key: "ttftMs" | "totalMs" | "tokensPerSec" | "costUsd") =>
     metrics.length ? metrics.reduce((sum, metric) => sum + metric[key], 0) / metrics.length : 0;
@@ -822,7 +822,12 @@ function PerformanceDialog({
               <span className="flex items-center gap-1"><Zap className="h-3 w-3 text-factory-lime" /> Local tok/s</span>
               <span className="flex items-center gap-1"><DollarSign className="h-3 w-3 text-factory-amber" /> Cost estimate</span>
               <span className="flex items-center gap-1"><MemoryStick className="h-3 w-3 text-factory-cyan" /> Unified memory</span>
-              <span className="ml-auto flex items-center gap-1"><Sparkles className="h-3 w-3" /> settings.defaultAgentId</span>
+              {settings?.defaultAgentId && (
+                <span className="ml-auto flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />
+                  Default: {agents.find((item) => item.id === settings.defaultAgentId)?.name ?? "unassigned"}
+                </span>
+              )}
             </div>
           </div>
         )}

@@ -205,27 +205,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         })}
       </nav>
 
-      <div className="space-y-2 border-t border-border p-3">
-        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1.5">
+      <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 border-t border-border p-3 text-[11px] text-muted-foreground">
+        {[
+          { label: "Ollama", online: Boolean(health?.ollama.online) },
+          { label: "LM Studio", online: Boolean(health?.lmstudio?.online) },
+          { label: "OpenCode", online: Boolean(health?.opencode.online) },
+          { label: "Cloud", online: Boolean(health?.models.cloudOnline) },
+        ].map((item) => (
+          <span key={item.label} className="flex items-center gap-1.5">
             <span
               className={cn(
                 "h-1.5 w-1.5 rounded-full",
-                health?.ollama.online ? "bg-factory-lime" : "bg-factory-red/70",
+                item.online ? "bg-factory-lime" : "bg-factory-red/70",
               )}
             />
-            Ollama
+            {item.label}
           </span>
-          <span className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "h-1.5 w-1.5 rounded-full",
-                health?.opencode.online ? "bg-factory-lime" : "bg-factory-red/70",
-              )}
-            />
-            OpenCode
-          </span>
-        </div>
+        ))}
+      </div>
+
+      <div className="border-t border-border p-3">
         <Button className="w-full justify-start" size="sm" onClick={() => launchRunDialog()}>
           <Plus className="h-3.5 w-3.5" />
           New run
@@ -270,11 +269,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
             <div className="flex min-w-0 flex-1 items-center gap-2">
               <span className="truncate text-sm font-semibold lg:hidden">Software Factory</span>
-              {activeRuns.length > 0 && (
-                <Badge variant="warning" className="hidden sm:inline-flex">
-                  {activeRuns.length} running
-                </Badge>
-              )}
             </div>
 
             <Button

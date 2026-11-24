@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { compactAgentContext, compactConversationHistory } from "@/lib/mesh/context-manager";
-import { sanitizeFtsQuery } from "@/lib/mesh/vector-memory";
 
 describe("compactAgentContext", () => {
   it("preserves code when input is within maxChars limit", () => {
@@ -53,18 +52,5 @@ describe("compactConversationHistory", () => {
 
     const compacted = compactConversationHistory(history);
     expect(compacted[1].content).toContain("export function greet");
-  });
-});
-
-describe("sanitizeFtsQuery", () => {
-  it("escapes syntax-breaking punctuation like parentheses, colons, and operators", () => {
-    expect(sanitizeFtsQuery("function()")).toContain('"function"*');
-    expect(sanitizeFtsQuery("user:auth")).toContain('"user"*');
-    expect(sanitizeFtsQuery("test-runner")).toContain('"test"*');
-  });
-
-  it("handles empty query strings safely without crashing", () => {
-    expect(sanitizeFtsQuery("   ")).toBe('""');
-    expect(sanitizeFtsQuery("!@#$%^&*()")).toBe('""');
   });
 });

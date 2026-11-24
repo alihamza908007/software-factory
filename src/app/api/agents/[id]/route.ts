@@ -1,6 +1,7 @@
 import { apiError, json } from "@/lib/core/api";
-import { deleteAgent, getAgent, listMetrics, saveAgent } from "@/lib/data/db";
+import { deleteAgent, getAgent, listAgents, listMetrics, saveAgent } from "@/lib/data/db";
 import type { Agent } from "@/lib/core/types";
+import { slugify } from "@/lib/core/utils";
 import { clearAgentMemory } from "@/lib/mesh/agent-memory";
 
 export const runtime = "nodejs";
@@ -30,11 +31,22 @@ export async function PATCH(
     const agent = await getAgent(id);
     if (!agent) return json({ error: "Agent not found." }, { status: 404 });
     const body = (await request.json()) as Partial<Agent>;
+    const requestedHandle = body.handle?.trim();
+    let handle = agent.handle;
+    if (requestedHandle && requestedHandle !== agent.handle) {
+      const slug = slugify(requestedHandle);
+      if (!slug) throw new Error("Agent handle must contain letters or numbers.");
+      const others = await listAgents();
+      if (others.some((item) => item.id !== agent.id && item.handle === slug)) {
+        throw new Error(`Handle @${slug} is already in use.`);
+      }
+      handle = slug;
+    }
     const next: Agent = {
       ...agent,
       ...body,
       id: agent.id,
-      handle: body.handle ? agent.handle : agent.handle,
+      handle,
       updatedAt: Date.now(),
     };
     if (body.modelKey) next.modelKey = body.modelKey;

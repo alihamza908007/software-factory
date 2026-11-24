@@ -1,4 +1,5 @@
 import { apiError, json } from "@/lib/core/api";
+import { isProjectBusy } from "@/lib/core/errors";
 import { getActiveTopology, listAgents, listProjects, listRuns } from "@/lib/data/db";
 import { startRun } from "@/lib/pipeline/engine";
 import { validateCanvasTopology } from "@/lib/pipeline/topology";
@@ -49,6 +50,6 @@ export async function POST(request: Request) {
     });
     return json({ run }, { status: 202 });
   } catch (error) {
-    return apiError(error, 400);
+    return apiError(error, isProjectBusy(error) ? 409 : 400);
   }
 }

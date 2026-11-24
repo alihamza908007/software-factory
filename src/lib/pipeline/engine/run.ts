@@ -21,7 +21,7 @@ import { negotiateTaskOwnership } from "@/lib/mesh/negotiation";
 
 import { executeCanvasTopology, type DagExecutionResult, type DagResumeOptions } from "@/lib/pipeline/scheduler";
 
-import { activeRuns, resolveAgents, publishSnapshot, logPhase, guardHandoff, setPhase, beginPhase, finishPhase, saveCheckpoint, addArtifact, publishArtifactEvent, assertActive } from "./shared";
+import { activeRuns, acquireProjectLock, releaseProjectLock, resolveAgents, publishSnapshot, logPhase, guardHandoff, setPhase, beginPhase, finishPhase, saveCheckpoint, addArtifact, publishArtifactEvent, assertActive } from "./shared";
 
 import { applyNodeManifest, commitPhase, generateFiles, performDependencyHandshake } from "./generation";
 
@@ -39,6 +39,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       item.status = "failed";
       item.error = "Project not found.";
     });
+    releaseProjectLock(run.projectId, runId);
     return;
   }
   const settings = await getSettings();
@@ -54,7 +55,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
   try {
     const isTopologyRun = Boolean(run.options.pipelineTopology && phaseStartIndex <= 2);
     let taskPlan: DecomposedTask[] = [];
-    if (!isTopologyRun) {
+    if (!isTopologyRun && phaseStartIndex <= 0) {
       const activeAgents = Array.from(new Map(
         Object.values(agents)
           .filter((agent): agent is Agent => Boolean(agent))
@@ -352,6 +353,8 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       const finalGit = await readGitState(root);
       const finalFiles = await listWorkspaceFiles(root, 300);
       await updateRun(runId, (item) => {
+        // A cancel that lands while deployment is finishing must win.
+        if (item.status === "cancelled") return;
         item.status = "passed";
         item.completedAt = Date.now();
         item.currentPhase = null;
@@ -360,7 +363,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
         item.artifacts.summary = `Built ${project.name} with the active custom DAG · ${finalFiles.length} files.`;
       });
       const finalRun = await getRun(runId);
-      if (finalRun) {
+      if (finalRun && finalRun.status === "passed") {
         runEvents.publish(runId, { type: "snapshot", run: finalRun });
         runEvents.publish(runId, { type: "done", runId, status: "passed" });
       }
@@ -651,6 +654,8 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       0,
     ) ?? 0;
     await updateRun(runId, (item) => {
+      // A cancel that lands while deployment is finishing must win.
+      if (item.status === "cancelled") return;
       item.status = "passed";
       item.completedAt = Date.now();
       item.currentPhase = null;
@@ -659,7 +664,7 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
       item.artifacts.summary = `Built ${project.name} with ${finalFiles.length} files, ${healCount} self-heal attempt(s), branch ${finalGit.branch ?? item.git.branch}.`;
     });
     const finalRun = await getRun(runId);
-    if (finalRun && finalRun.status !== "cancelled") {
+    if (finalRun && finalRun.status === "passed") {
       runEvents.publish(runId, { type: "snapshot", run: finalRun });
       runEvents.publish(runId, { type: "done", runId, status: "passed" });
     }
@@ -687,15 +692,22 @@ async function executeRun(runId: string, resumeFrom?: PhaseId) {
     const finalRun = await getRun(runId);
     if (finalRun) {
       runEvents.publish(runId, { type: "snapshot", run: finalRun });
+    }
+    // Publish the diagnostic before `done`: clients close the stream on `done`,
+    // so an error emitted afterwards is usually never seen.
+    if (!aborted) {
+      runEvents.publish(runId, {
+        type: "error",
+        runId,
+        message: String(error),
+      });
+    }
+    if (finalRun) {
       runEvents.publish(runId, { type: "done", runId, status });
     }
-    runEvents.publish(runId, {
-      type: "error",
-      runId,
-      message: aborted ? "Run cancelled." : String(error),
-    });
   } finally {
     activeRuns.delete(runId);
+    releaseProjectLock(run.projectId, runId);
   }
 }
 
@@ -732,10 +744,16 @@ export async function startRun(input: {
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
-  await saveRun(run);
-  await saveProject({ ...project, lastRunId: runId, updatedAt: Date.now() });
-  runEvents.publish(runId, { type: "snapshot", run });
+  acquireProjectLock(project.id, runId);
+  try {
+    await saveRun(run);
+    await saveProject({ ...project, lastRunId: runId, updatedAt: Date.now() });
+  } catch (error) {
+    releaseProjectLock(project.id, runId);
+    throw error;
+  }
   activeRuns.set(runId, { controller: new AbortController(), cancelled: false });
+  runEvents.publish(runId, { type: "snapshot", run });
   void executeRun(runId);
   return run;
 }
@@ -778,46 +796,95 @@ export async function resumeRun(runId: string): Promise<Run> {
     run.options.engine === "canvas" && (resumeTarget === "testing" || resumeTarget === "deployment")
       ? "implementation"
       : resumeTarget;
+  acquireProjectLock(run.projectId, runId);
   const controller = new AbortController();
   activeRuns.set(runId, { controller, cancelled: false });
-  await updateRun(runId, (item) => {
-    item.status = "queued";
-    item.error = undefined;
-    item.completedAt = undefined;
-    item.currentPhase = phaseId;
-    item.updatedAt = Date.now();
-  });
-  const snapshot = await getRun(runId);
-  if (snapshot) runEvents.publish(runId, { type: "snapshot", run: snapshot });
-  void executeRun(runId, phaseId);
-  return snapshot!;
+  try {
+    await updateRun(runId, (item) => {
+      item.status = "queued";
+      item.error = undefined;
+      item.completedAt = undefined;
+      item.currentPhase = phaseId;
+      item.updatedAt = Date.now();
+    });
+    const snapshot = await getRun(runId);
+    if (snapshot) runEvents.publish(runId, { type: "snapshot", run: snapshot });
+    void executeRun(runId, phaseId);
+    return snapshot!;
+  } catch (error) {
+    activeRuns.delete(runId);
+    releaseProjectLock(run.projectId, runId);
+    throw error;
+  }
 }
+
+const PHASE_ORDER: PhaseId[] = [
+  "requirements",
+  "architecture",
+  "implementation",
+  "testing",
+  "deployment",
+];
 
 export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> {
   const run = await getRun(runId);
   const project = run ? await getProject(run.projectId) : undefined;
   if (!run || !project) throw new Error("Run or project not found.");
+  if (isRunActive(runId)) {
+    throw new Error("This run is still active. Wait for it to finish or cancel it before rerunning a phase.");
+  }
+  const isCanvas = run.options.engine === "canvas";
+  if (isCanvas && (phaseId === "requirements" || phaseId === "architecture")) {
+    throw new Error(
+      "Canvas runs are defined by their DAG. Edit the topology and rebuild instead of rerunning requirements or architecture.",
+    );
+  }
+
   const settings = await getSettings();
-  const healLimit = Math.min(run.options.maxHealAttempts ?? settings.maxHealAttempts, 3);
   const agents = resolveAgents(await listAgents());
   const active = new AbortController();
-  activeRuns.set(runId, { controller: active, cancelled: false });
-  await updateRun(runId, (item) => {
-    item.status = "running";
-    item.completedAt = undefined;
-    item.error = undefined;
-    const phase = item.phases.find((entry) => entry.id === phaseId);
-    if (phase) {
-      phase.status = "running";
-      phase.error = undefined;
-      phase.startedAt = Date.now();
-      phase.completedAt = undefined;
-      phase.progress = 5;
-    }
-    item.currentPhase = phaseId;
-  });
-  runEvents.publish(runId, { type: "snapshot", run: (await getRun(runId))! });
+  const startIndex = PHASE_ORDER.indexOf(phaseId);
 
+  acquireProjectLock(project.id, runId);
+  try {
+    activeRuns.set(runId, { controller: active, cancelled: false });
+    await updateRun(runId, (item) => {
+      item.status = "running";
+      item.completedAt = undefined;
+      item.error = undefined;
+      item.currentPhase = phaseId;
+      // The rerun target and everything downstream of it are stale: the phase
+      // is re-executed and its output invalidates later phases.
+      item.phases.forEach((phase) => {
+        if (PHASE_ORDER.indexOf(phase.id) < startIndex) return;
+        phase.status = "pending";
+        phase.progress = 0;
+        phase.error = undefined;
+        phase.startedAt = undefined;
+        phase.completedAt = undefined;
+        phase.healAttempts = [];
+      });
+      // A rebuild must actually re-run the DAG instead of replaying its checkpoint.
+      if (isCanvas && phaseId === "implementation" && item.checkpoints?.implementation?.canvas) {
+        delete item.checkpoints.implementation.canvas;
+      }
+    });
+    runEvents.publish(runId, { type: "snapshot", run: (await getRun(runId))! });
+  } catch (error) {
+    activeRuns.delete(runId);
+    releaseProjectLock(project.id, runId);
+    throw error;
+  }
+
+  // Standard runs and canvas rebuilds go through the orchestrator so the
+  // selected phase and every phase downstream of it actually execute.
+  if (!isCanvas || phaseId === "implementation") {
+    void executeRun(runId, phaseId);
+    return (await getRun(runId))!;
+  }
+
+  // Canvas testing/deployment reuse the shared phase processors; the DAG is the
+  // build step and must not be replaced by the standard implementation engine.
   void (async () => {
     try {
       const root = project.workspacePath;
@@ -827,11 +894,9 @@ export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> 
       const architecture = await fs
         .readFile(path.join(root, "docs/ARCHITECTURE.md"), "utf8")
         .catch(() => "");
-      if (phaseId === "implementation") {
-        await processImplementation(runId, project, root, agents, spec, architecture, run.options.allowConcurrency, active.signal, [], healLimit);
-      } else if (phaseId === "testing") {
+      if (phaseId === "testing") {
         await processTesting(runId, project, root, agents, spec, architecture, settings, run.options.allowConcurrency);
-      } else if (phaseId === "deployment") {
+      } else {
         const current = await getRun(runId);
         await processDeployment(
           runId,
@@ -841,16 +906,22 @@ export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> 
           settings,
           current?.artifacts.summary ?? "Tests passed in the testing phase.",
         );
-      } else {
-        throw new Error(`Rerunning the ${phaseId} phase is not supported yet.`);
       }
+      const finalGit = await readGitState(root);
+      const finalFiles = await listWorkspaceFiles(root, 300);
       await updateRun(runId, (item) => {
+        if (item.status === "cancelled") return;
         item.status = "passed";
         item.completedAt = Date.now();
         item.currentPhase = null;
+        item.git = { ...item.git, ...finalGit };
+        item.artifacts.fileTree = finalFiles;
       });
       const final = await getRun(runId);
-      if (final) runEvents.publish(runId, { type: "done", runId, status: "passed" });
+      if (final && final.status === "passed") {
+        runEvents.publish(runId, { type: "snapshot", run: final });
+        runEvents.publish(runId, { type: "done", runId, status: "passed" });
+      }
     } catch (error) {
       await setPhase(runId, phaseId, {
         status: "failed",
@@ -861,9 +932,13 @@ export async function rerunPhase(runId: string, phaseId: PhaseId): Promise<Run> 
         item.error = String(error).slice(0, 2000);
         item.currentPhase = null;
       });
+      const final = await getRun(runId);
+      if (final) runEvents.publish(runId, { type: "snapshot", run: final });
       runEvents.publish(runId, { type: "error", runId, message: String(error) });
+      if (final) runEvents.publish(runId, { type: "done", runId, status: "failed" });
     } finally {
       activeRuns.delete(runId);
+      releaseProjectLock(project.id, runId);
     }
   })();
   return (await getRun(runId))!;

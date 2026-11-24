@@ -278,7 +278,7 @@ export function detectDeadLoop(input: {
     occurrences,
     window: next,
     message: detected
-      ? `Dead loop detected: ${transition} repeated ${occurrences} times without payload progress. Pipeline frozen.`
+      ? `Dead loop detected: ${transition} repeated ${occurrences} times without payload progress. Branch paused.`
       : `No dead loop (${occurrences}/${threshold} identical transitions).`,
   };
 }
