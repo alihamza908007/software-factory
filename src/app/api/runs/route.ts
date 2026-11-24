@@ -1,5 +1,6 @@
 import { apiError, json } from "@/lib/core/api";
 import { isProjectBusy } from "@/lib/core/errors";
+import { MAX_STORED_RUNS } from "@/lib/core/constants";
 import { getActiveTopology, listAgents, listProjects, listRuns } from "@/lib/data/db";
 import { startRun } from "@/lib/pipeline/engine";
 import { validateCanvasTopology } from "@/lib/pipeline/topology";
@@ -12,7 +13,7 @@ export const maxDuration = 3600;
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const limit = Math.min(100, Math.max(1, Number(url.searchParams.get("limit") ?? 30)));
+    const limit = Math.min(MAX_STORED_RUNS, Math.max(1, Number(url.searchParams.get("limit") ?? 30)));
     const [runs, projects] = await Promise.all([listRuns(limit), listProjects()]);
     return json({ runs, projects: projects.map((project) => ({ id: project.id, name: project.name })) });
   } catch (error) {

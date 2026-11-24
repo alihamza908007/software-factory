@@ -51,7 +51,7 @@ async function startCanvasRun(
         ? { ...phase, status: "skipped" as const, progress: 100, completedAt: Date.now() }
         : phase,
     ),
-    git: { initialized: false, commits: [], dirtyFiles: 0, pushed: false, branch: branchNameForDag(project) },
+    git: { initialized: false, commits: [], dirtyFiles: 0, pushed: false, branch: dagBranchFor(project) },
     artifacts: { fileTree: [] },
     options: {
       engine: "canvas",
@@ -60,6 +60,7 @@ async function startCanvasRun(
       pushToGitHub: false,
       maxHealAttempts: 3,
     },
+    startedAt: Date.now(),
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -75,8 +76,10 @@ async function startCanvasRun(
   return run;
 }
 
-function branchNameForDag(project: Project | undefined): string | undefined {
-  return project ? `dag-${project.slug}` : undefined;
+function dagBranchFor(project: Project | undefined): string | undefined {
+  // Labelled as the DAG label (the standard engine rewrites it on a run
+  // branch); it stays honest because an ad-hoc DAG may not commit anything.
+  return project?.slug ? `${project.slug}-dag` : undefined;
 }
 
 async function finalizeCanvasRun(

@@ -20,8 +20,8 @@ type PersistedRunEvents = {
 const EVENT_LOG_PATH = path.join(DATA_ROOT, "run-events.json");
 const PERSIST_DEBOUNCE_MS = 350;
 /** Keep the log small: the newest snapshot plus recent incremental events. */
-const MAX_RUNS_ON_DISK = 12;
-const MAX_EVENTS_ON_DISK = 160;
+const MAX_RUNS_ON_DISK = 24;
+const MAX_EVENTS_ON_DISK = 200;
 
 function eventTime(event: RunEvent): number {
   switch (event.type) {

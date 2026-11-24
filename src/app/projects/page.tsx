@@ -139,15 +139,36 @@ export default function ProjectsPage() {
 
   async function deleteProject() {
     if (!deleting) return;
+    const workspacePath = deleting.workspacePath;
     try {
       const res = await fetch(`/api/projects/${deleting.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error((await res.json()).error);
       await Promise.all([fetchProjects(), fetchRuns()]);
       if (detail?.id === deleting.id) setDetail(null);
-      toast.success("Project removed.");
+      toast.success("Project removed.", {
+        action: {
+          label: "Reveal workspace",
+          onClick: () => void revealWorkspace(workspacePath),
+        },
+      });
       setDeleting(null);
     } catch (error) {
       toast.error(String(error));
+    }
+  }
+
+  async function revealWorkspace(workspacePath: string) {
+    try {
+      const res = await fetch("/api/desktop/reveal", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: workspacePath }),
+      });
+      const data = (await res.json()) as { ok: boolean; error?: string };
+      if (!res.ok || !data.ok) throw new Error(data.error ?? "Could not open the workspace folder.");
+      toast.success("Opening the workspace folder…", { description: workspacePath });
+    } catch (error) {
+      toast.warning(String(error));
     }
   }
 
