@@ -1,39 +1,27 @@
-import { readJson, sseChunk, sseHeaders } from "@/lib/core/api";
-import { createThread, getThread } from "@/lib/data/db";
-import type { ChatThread } from "@/lib/core/types";
-import { uid } from "@/lib/core/utils";
-import { runChatTurn, type ChatBody } from "@/lib/chat/turn-engine";
+import { json, readJson } from "@/lib/core/api";
+import { startChatTurn, type ChatBody } from "@/lib/chat/turn-engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 3600;
 
+/**
+ * Launches the turn detached and returns the thread id. The client follows the
+ * same turn on GET /api/threads/[id]/events (server-side replay), so drops or
+ * page reloads can reattach from the durable log.
+ */
 export async function POST(request: Request) {
   let body: ChatBody;
   try {
     body = await readJson<ChatBody>(request);
   } catch (error) {
-    return new Response(JSON.stringify({ error: String(error) }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+    return json({ error: String(error) }, { status: 400 });
   }
-  if (!body.message?.trim()) {
-    return new Response(JSON.stringify({ error: "Message is required." }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+  if (!body.message?.trim()) return json({ error: "Message is required." }, { status: 400 });
+  try {
+    const threadId = await startChatTurn(body);
+    return json({ threadId }, { status: 202 });
+  } catch (error) {
+    return json({ error: String(error) }, { status: 400 });
   }
-
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      await runChatTurn({ body, request, controller });
-    },
-    cancel() {
-      // request.signal handles cancellation
-    },
-  });
-
-  return new Response(stream, { headers: sseHeaders() });
 }

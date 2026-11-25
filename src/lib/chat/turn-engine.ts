@@ -13,6 +13,7 @@ import { generateWithAgent } from "@/lib/providers/router";
 import { chatPrompt, handoffPrompt } from "@/lib/pipeline/prompts";
 import { correctiveInstruction, validateAgentHandoff } from "@/lib/pipeline/guardrails";
 import { parseMentions, readJson, sseChunk, sseHeaders } from "@/lib/core/api";
+import { chatEvents, type ChatEvent } from "@/lib/data/chat-events";
 import { startRun } from "@/lib/pipeline/engine";
 import { applyFileBlocks, parseFileBlocks } from "@/lib/pipeline/parse";
 import type { Agent, ChatMessage, ChatThread } from "@/lib/core/types";
@@ -64,29 +65,74 @@ export interface ChatBody {
   autoHandoff?: boolean;
 }
 
+/** Create or load the thread a turn belongs to, so `startChatTurn` can return the id. */
+export async function resolveThreadId(body: ChatBody): Promise<ChatThread> {
+  let thread = body.threadId ? await getThread(body.threadId) : undefined;
+  if (!thread) {
+    const now = Date.now();
+    thread = {
+      id: body.threadId || uid("thr"),
+      projectId: body.projectId,
+      title: body.message.slice(0, 64),
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    await createThread(thread);
+  }
+  return thread;
+}
+
+/**
+ * Spawn a chat turn detached from any HTTP request. Every turn event is
+ * mirrored to `chatEvents` (`src/lib/data/chat-events.ts`) so the turn can be
+ * observed and replayed through `GET /api/threads/[id]/events` even after a
+ * client disconnects or reloads mid-stream.
+ */
+export async function startChatTurn(body: ChatBody): Promise<string> {
+  const thread = await resolveThreadId(body);
+  void runChatTurn({
+    body: { ...body, threadId: thread.id },
+    request: new Request("http://127.0.0.1/api/chat", { method: "POST" }),
+  });
+  return thread.id;
+}
+
 export async function runChatTurn(params: {
   body: ChatBody;
   request: Request;
-  controller: ReadableStreamDefaultController<Uint8Array>;
+  controller?: ReadableStreamDefaultController<Uint8Array>;
 }): Promise<void> {
   const { body, request, controller } = params;
-      let closed = false;
-      let sequence = 0;
-      const pendingValidation: Promise<void>[] = [];
-      const send = (event: string, data: unknown) => {
-        if (closed) return;
-        try {
-          controller.enqueue(sseChunk(event, data, ++sequence));
-        } catch {
-          closed = true;
-        }
-      };
+  let closed = false;
+  let sequence = 0;
+  let chatThreadId: string | null = null;
+  const pendingValidation: Promise<void>[] = [];
+  const send = (event: string, data: unknown) => {
+    if (closed) return;
+    const id = ++sequence;
+    try {
+      controller?.enqueue(sseChunk(event, data, id));
+    } catch {
+      closed = true;
+    }
+    // Mirror every turn event to the durable chat log so a client that
+    // reconnects (or a page reload) can replay it from
+    // GET /api/threads/[id]/events?since=…
+    try {
+      if (chatThreadId) {
+        chatEvents.publish(chatThreadId, { type: event, sequence: id, at: Date.now(), ...(data as object) });
+      }
+    } catch {
+      // the durable log must never break the turn
+    }
+  };
 
       const close = () => {
         if (closed) return;
         closed = true;
         try {
-          controller.close();
+          controller?.close();
         } catch {
           // already closed
         }
@@ -98,19 +144,8 @@ export async function runChatTurn(params: {
         const settings = await getSettings();
         const agents = await listAgents();
         const now = Date.now();
-        let thread: ChatThread | undefined;
-        if (body.threadId) thread = await getThread(body.threadId);
-        if (!thread) {
-          thread = {
-            id: body.threadId || uid("thr"),
-            projectId: body.projectId,
-            title: body.message.slice(0, 64),
-            messages: [],
-            createdAt: now,
-            updatedAt: now,
-          };
-          await createThread(thread);
-        }
+        const thread = await resolveThreadId(body);
+        chatThreadId = thread.id;
         const persistSystemNote = async (content: string, extra?: Partial<ChatMessage>) => {
           await appendThreadMessage(thread!.id, {
             id: uid("msg"),

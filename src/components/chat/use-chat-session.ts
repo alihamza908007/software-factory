@@ -382,48 +382,18 @@ export function useChatSession() {
           autoHandoff: settings?.autoHandoff ?? true,
         }),
       });
-      if (!res.ok || !res.body) {
+      if (!res.ok) {
         const data = await res.json().catch(() => ({ error: "Chat request failed." }));
         throw new Error(data.error ?? "Chat request failed.");
       }
+      const data = (await res.json()) as { threadId?: string };
+      if (data.threadId) activeThreadId = data.threadId;
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const frames = buffer.split("\n\n");
-        buffer = frames.pop() ?? "";
-        for (const frame of frames) {
-          const lines = frame.split("\n");
-          const eventLine = lines.find((line) => line.startsWith("event:"));
-          const dataLines = lines.filter((line) => line.startsWith("data:"));
-          if (!eventLine || !dataLines.length) continue;
-          let payload: unknown;
-          try {
-            payload = JSON.parse(dataLines.map((line) => line.slice(5).trim()).join("\n"));
-          } catch {
-            continue;
-          }
-          const eventName = eventLine.slice(6).trim();
-          const idLine = lines.find((line) => line.startsWith("id:"));
-          if (idLine && eventName !== "ping") {
-            const id = Number(idLine.slice(3).trim());
-            if (Number.isFinite(id) && id <= lastChatEventId.current) continue;
-            if (Number.isFinite(id)) lastChatEventId.current = id;
-          }
-          if (eventName === "thread") {
-            activeThreadId = (payload as { threadId: string }).threadId;
-          }
-          handleSseEvent(eventName, payload);
-        }
-      }
+      if (activeThreadId) await consumeStream(activeThreadId, controller);
       return true;
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        toast.message("Generation stopped.");
+      if (controller.signal.aborted) {
+        if (mountedRef.current) toast.message("Generation stopped.");
       } else {
         toast.error(error instanceof Error ? error.message : String(error));
       }
@@ -444,6 +414,73 @@ export function useChatSession() {
       }
     }
   }
+
+  /**
+   * Consume the durable per-thread event stream (GET /api/threads/[id]/events).
+   * Events carry server sequence ids so a reconnect replays only the missed
+   * tail from `lastChatEventId`; a stream that ends without `done` reconnects
+   * after a short pause instead of giving up.
+   */
+  async function consumeStream(
+    threadId: string,
+    controller: AbortController,
+  ): Promise<void> {
+    while (!controller.signal.aborted) {
+      try {
+        const res = await fetch(`/api/threads/${threadId}/events?since=${lastChatEventId.current}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!res.ok || !res.body) throw new Error("Chat stream unavailable.");
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const frames = buffer.split("\n\n");
+          buffer = frames.pop() ?? "";
+          for (const frame of frames) {
+            const lines = frame.split("\n");
+            const eventLine = lines.find((line) => line.startsWith("event:"));
+            const dataLines = lines.filter((line) => line.startsWith("data:"));
+            if (!eventLine || !dataLines.length) continue;
+            const idLine = lines.find((line) => line.startsWith("id:"));
+            const id = idLine ? Number(idLine.slice(3).trim()) : 0;
+            if (Number.isFinite(id) && id > 0) {
+              if (id <= lastChatEventId.current) continue;
+              lastChatEventId.current = id;
+            }
+            const eventName = eventLine.slice(6).trim();
+            if (eventName === "ping") continue;
+            let payload: unknown;
+            try {
+              payload = JSON.parse(dataLines.map((line) => line.slice(5).trim()).join("\n"));
+            } catch {
+              continue;
+            }
+            handleSseEvent(eventName, payload);
+            if (eventName === "done") return;
+          }
+        }
+      } catch {
+        // Transient drop or closed stream — reconnect and replay from the last id.
+      }
+      if (controller.signal.aborted) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  /**
+   * Open the event stream for the current thread on load so a reload attaches
+   * to the live turn instead of starting one.
+   */
+  useEffect(() => {
+    if (!threadId || streaming) return;
+    void consumeStream(threadId, abortRef.current ?? new AbortController());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, streaming]);
 
   async function saveEditedMessage(message: ChatMessage, content: string) {
     if (!threadId) throw new Error("Save this conversation before editing a message.");

@@ -44,6 +44,9 @@ routing, and the data/state layer). All items from the first audit pass have now
 - **Event durability.** Validation completes before the stream closes, and routing,
   guardrail/handoff and dead-loop notices are persisted as system messages so they survive
   the client's thread refetch.
+- **Durable chat event log with replay.** Turn events are mirrored to `chat-events.json`
+  (bounded per thread) with sequence ids, and `GET /api/threads/[id]/events?since=…` replays
+  them, so a dropped connection or reload reattaches mid-turn instead of losing it.
 - User message is no longer duplicated in each prompt; reroute tokens stream as deltas;
   disabled agents are excluded from fallbacks and chips; abort no longer persists an error;
   `NEXT_AGENT:` directives are honored; tokens include handoffs.
@@ -78,5 +81,7 @@ routing, and the data/state layer). All items from the first audit pass have now
   authenticate API calls with `Authorization: Bearer` or an HttpOnly cookie bootstrapped via
   `/?token=…` (see `src/middleware.ts`); the unauthenticated local mode is unchanged, and
   cross-site mutations are rejected.
-- A single unified endpoint for chat and mesh events (with server-side replay of chat turns
-  across a full page reload) would require a durable event log, not just sequence ids.
+- True end-to-end chat streaming durability: turn events are mirrored to the durable per-thread
+  log (`src/lib/data/chat-events.ts`, replay at `GET /api/threads/[id]/events`), so a reload or
+  dropped connection can reattach mid-turn. What remains is the inverse — letting a turn finish
+  detached after the client disconnects and waking one up later.
