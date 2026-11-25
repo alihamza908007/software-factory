@@ -13,7 +13,8 @@ import { generateWithAgent } from "@/lib/providers/router";
 import { chatPrompt, handoffPrompt } from "@/lib/pipeline/prompts";
 import { correctiveInstruction, validateAgentHandoff } from "@/lib/pipeline/guardrails";
 import { parseMentions, readJson, sseChunk, sseHeaders } from "@/lib/core/api";
-import { chatEvents, type ChatEvent } from "@/lib/data/chat-events";
+import { chatEvents } from "@/lib/data/chat-events";
+import { chatJobs, markChatJobDone } from "@/lib/chat/jobs";
 import { startRun } from "@/lib/pipeline/engine";
 import { applyFileBlocks, parseFileBlocks } from "@/lib/pipeline/parse";
 import type { Agent, ChatMessage, ChatThread } from "@/lib/core/types";
@@ -88,14 +89,34 @@ export async function resolveThreadId(body: ChatBody): Promise<ChatThread> {
  * mirrored to `chatEvents` (`src/lib/data/chat-events.ts`) so the turn can be
  * observed and replayed through `GET /api/threads/[id]/events` even after a
  * client disconnects or reloads mid-stream.
+ *
+ * Idempotent: if a turn is already running for the thread, the job is reused
+ * and `running: true` is returned. Otherwise a new job is registered in
+ * `src/lib/chat/jobs.ts` (cancellable via `cancelChatJob`) and `running: true`.
  */
-export async function startChatTurn(body: ChatBody): Promise<string> {
+export async function startChatTurn(
+  body: ChatBody,
+): Promise<{ threadId: string; running: boolean }> {
   const thread = await resolveThreadId(body);
-  void runChatTurn({
-    body: { ...body, threadId: thread.id },
-    request: new Request("http://127.0.0.1/api/chat", { method: "POST" }),
+  const existing = chatJobs.get(thread.id);
+  if (existing && existing.status === "running") {
+    return { threadId: thread.id, running: true };
+  }
+  const controller = new AbortController();
+  chatJobs.set(thread.id, {
+    threadId: thread.id,
+    controller,
+    startedAt: Date.now(),
+    status: "running",
   });
-  return thread.id;
+  const request = new Request("http://127.0.0.1/api/chat", {
+    method: "POST",
+    signal: controller.signal,
+  });
+  void runChatTurn({ body: { ...body, threadId: thread.id }, request }).finally(() => {
+    markChatJobDone(thread.id);
+  });
+  return { threadId: thread.id, running: true };
 }
 
 export async function runChatTurn(params: {

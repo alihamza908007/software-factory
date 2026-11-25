@@ -47,6 +47,10 @@ routing, and the data/state layer). All items from the first audit pass have now
 - **Durable chat event log with replay.** Turn events are mirrored to `chat-events.json`
   (bounded per thread) with sequence ids, and `GET /api/threads/[id]/events?since=…` replays
   them, so a dropped connection or reload reattaches mid-turn instead of losing it.
+- **Wake API for running turns.** `POST /api/threads/[id]/jobs` starts or reports a turn
+  (resends the last user message), `GET /api/threads/[id]/jobs` reports the state, and
+  `POST /api/threads/[id]/jobs/cancel` aborts an active turn. Turns are registered in
+  `src/lib/chat/jobs.ts` and run detached via `startChatTurn`.
 - User message is no longer duplicated in each prompt; reroute tokens stream as deltas;
   disabled agents are excluded from fallbacks and chips; abort no longer persists an error;
   `NEXT_AGENT:` directives are honored; tokens include handoffs.

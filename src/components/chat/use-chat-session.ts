@@ -125,6 +125,12 @@ export function useChatSession() {
       setThreadId(id);
       setMessages(data.thread.messages);
       setHandoff(null);
+      // Wake semantics: if a turn is still running server-side, tell the user;
+      // the attach effect below reconnects to its stream.
+      const jobs = await fetch(`/api/threads/${id}/jobs`, { cache: "no-store" }).catch(() => null);
+      if (!mountedRef.current) return;
+      const jobState = jobs ? ((await jobs.json().catch(() => ({}))) as { running?: boolean }) : null;
+      if (jobState?.running) toast.message("This turn is still running on the server — resuming it.");
     } catch (error) {
       toast.error(String(error));
     }
@@ -386,7 +392,7 @@ export function useChatSession() {
         const data = await res.json().catch(() => ({ error: "Chat request failed." }));
         throw new Error(data.error ?? "Chat request failed.");
       }
-      const data = (await res.json()) as { threadId?: string };
+      const data = (await res.json()) as { threadId?: string; running?: boolean };
       if (data.threadId) activeThreadId = data.threadId;
 
       if (activeThreadId) await consumeStream(activeThreadId, controller);
