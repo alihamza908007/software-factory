@@ -56,7 +56,25 @@ routing, and the data/state layer). All items from the first audit pass have now
   20 s (runs still 7 s). Map lookups replace O(n×m) scans; duplicate page-load fetches removed;
   mesh stream torn down on unmount; compact DB writes with a safe reset path.
 
+### Validation & recovery
+- **Settings validation.** Numeric settings must be whole numbers inside their UI ranges
+  (VRAM budget/reserve, heavy and light concurrency, queue and command timeouts, handoff depth,
+  guardrail and dead-loop limits). Provider URLs must be `http(s)`, and a default agent must
+  exist and be enabled. The heavy-concurrency field is editable again now that the resource
+  queue honors 1–4.
+- **Run launch validation.** Self-heal attempts are whole numbers 0–8 (server clamp + launcher
+  clamp), briefs are capped at 8,000 characters, and boolean flags are type-checked.
+- **Agent validation.** Hire/update share one validator: non-empty names/roles/prompts, bounded
+  description and tags, temperature 0–2, output tokens 256–32,768. PATCH uses an explicit field
+  whitelist so `id`, `createdAt` and other immutable fields cannot be overwritten.
+- **Thread validation.** A thread's `projectId` must reference a live project and titles are
+  capped at 120 characters on create and rename.
+- **Recovery UI.** Paused/interrupted runs expose Resume (from the last saved phase) directly in
+  the run detail, with a dedicated paused filter, instead of only in the shell banner.
+
 ## Remaining architectural work
 
 - A single unified endpoint for chat and mesh events (with server-side replay of chat turns
   across a full page reload) would require a durable event log, not just sequence ids.
+- API authentication remains intentionally out of scope: the app is pinned to `127.0.0.1` and
+  documented as a local trust boundary rather than a multi-user service.

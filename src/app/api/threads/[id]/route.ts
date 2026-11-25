@@ -1,5 +1,5 @@
 import { apiError, json } from "@/lib/core/api";
-import { deleteThread, getThread, updateDb } from "@/lib/data/db";
+import { deleteThread, getProject, getThread, updateDb } from "@/lib/data/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,13 @@ export async function PATCH(
   try {
     const { id } = await context.params;
     const body = (await request.json()) as { title?: string; projectId?: string; messageId?: string; content?: string };
+    if (body.title !== undefined && body.title.trim().length > 120) {
+      throw new Error("A conversation title must be 120 characters or fewer.");
+    }
+    if (body.projectId) {
+      const project = await getProject(body.projectId);
+      if (!project) throw new Error("That project no longer exists.");
+    }
     const thread = await updateDb((db) => {
       const found = db.threads.find((item) => item.id === id);
       if (!found) return undefined;

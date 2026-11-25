@@ -722,6 +722,9 @@ export async function startRun(input: {
   const project = await getProject(input.projectId);
   if (!project) throw new Error("Project not found.");
   const settings = await getSettings();
+  const healBudget = Number.isFinite(input.maxHealAttempts)
+    ? Math.max(0, Math.min(8, Math.round(input.maxHealAttempts as number)))
+    : settings.maxHealAttempts;
   const runId = uid("run");
   const branch = branchNameFor(project.slug);
   const run: Run = {
@@ -735,7 +738,7 @@ export async function startRun(input: {
     git: { initialized: false, commits: [], dirtyFiles: 0, pushed: false, branch },
     artifacts: { fileTree: [] },
     options: {
-      maxHealAttempts: input.maxHealAttempts ?? settings.maxHealAttempts,
+      maxHealAttempts: healBudget,
       allowConcurrency: input.allowConcurrency ?? false,
       pushToGitHub: input.pushToGitHub ?? false,
       engine: input.pipelineTopology ? "canvas" : "standard",

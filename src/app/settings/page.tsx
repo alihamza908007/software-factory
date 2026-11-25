@@ -537,9 +537,17 @@ export default function SettingsPage() {
               </div>
               <div className="grid gap-1.5">
                 <Label>Concurrent heavy local models</Label>
-                <Input value="1" readOnly className="font-mono" />
+                <Input
+                  type="number"
+                  min="1"
+                  max="4"
+                  value={draft.maxConcurrentHeavy}
+                  onChange={(event) => set("maxConcurrentHeavy", Number(event.target.value))}
+                  className="font-mono"
+                />
                 <p className="text-xs text-muted-foreground">
-                  Heavy local generations run one at a time. Cloud and eligible light local generations remain concurrent.
+                  Heavy generations share the VRAM budget. Raise this only when the budget can hold
+                  more than one resident model; cloud and light local streams stay concurrent.
                 </p>
               </div>
               <div className="grid gap-1.5">
@@ -716,6 +724,7 @@ export default function SettingsPage() {
                   {agents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
                       {agent.name} · {agent.role}
+                      {agent.enabled ? "" : " · disabled"}
                     </option>
                   ))}
                 </select>
@@ -794,7 +803,7 @@ export default function SettingsPage() {
               </div>
               <p className="mt-2 text-xs leading-relaxed text-factory-amber/80">
                 The supervisor hashes [source → target + payload] for the last {draft.deadLoopWindow} handoffs.
-                Reaching {draft.deadLoopThreshold} identical transitions freezes the pipeline with a
+                Reaching {draft.deadLoopThreshold} identical transitions pauses that branch with a
                 DEAD_LOOP_EXCEPTION before another token is spent.
               </p>
             </div>

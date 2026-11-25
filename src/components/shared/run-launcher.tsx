@@ -51,6 +51,11 @@ export function GlobalRunLauncher() {
     if (open && settings) setAttempts(settings.maxHealAttempts);
   }, [open, projects, projectId, settings]);
 
+  function updateAttempts(value: number) {
+    const next = Number.isFinite(value) ? Math.round(value) : 0;
+    setAttempts(Math.max(0, Math.min(8, next)));
+  }
+
   async function createProject() {
     if (!newName.trim()) {
       toast.error("Give the project a name.");
@@ -218,7 +223,7 @@ export function GlobalRunLauncher() {
                 min={0}
                 max={8}
                 value={attempts}
-                onChange={(event) => setAttempts(Number(event.target.value))}
+                onChange={(event) => updateAttempts(Number(event.target.value))}
                 className="h-8 w-16 text-center font-mono"
               />
             </div>

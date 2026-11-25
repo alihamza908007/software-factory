@@ -33,6 +33,23 @@ export async function POST(request: Request) {
     };
     if (!body.projectId) throw new Error("projectId is required.");
     if (!body.prompt?.trim()) throw new Error("A build brief is required.");
+    if (body.prompt.trim().length > 8_000) {
+      throw new Error("A build brief must be 8,000 characters or fewer.");
+    }
+    if (body.maxHealAttempts !== undefined) {
+      if (
+        !Number.isInteger(body.maxHealAttempts) ||
+        body.maxHealAttempts < 0 ||
+        body.maxHealAttempts > 8
+      ) {
+        throw new Error("Self-heal attempts must be a whole number between 0 and 8.");
+      }
+    }
+    for (const key of ["allowConcurrency", "pushToGitHub"] as const) {
+      if (body[key] !== undefined && typeof body[key] !== "boolean") {
+        throw new Error(`${key} must be a boolean.`);
+      }
+    }
     // Explicit topology wins; otherwise use the server-activated DAG so a
     // scheduled/API launch cannot silently fall back to the legacy phases.
     const topology = body.pipelineTopology ?? (await getActiveTopology()) ?? undefined;

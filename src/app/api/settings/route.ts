@@ -1,5 +1,5 @@
 import { apiError, json } from "@/lib/core/api";
-import { getSettings, updateSettings } from "@/lib/data/db";
+import { getSettings, listAgents, updateSettings } from "@/lib/data/db";
 import { syncEnvFile } from "@/lib/core/env-sync";
 import { discoverOpenCodeUrl, invalidateModelCache } from "@/lib/providers/catalog";
 import { resourceQueue } from "@/lib/runtime/queue/resource-manager";
@@ -7,6 +7,26 @@ import type { FactorySettings } from "@/lib/core/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function wholeNumber(value: number, label: string, min: number, max: number): number {
+  if (!Number.isInteger(value)) throw new Error(`${label} must be a whole number.`);
+  if (value < min || value > max) throw new Error(`${label} must be between ${min} and ${max}.`);
+  return value;
+}
+
+function httpUrl(value: string, label: string): string {
+  if (!value) return value;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid http(s) URL.`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`${label} must start with http:// or https://.`);
+  }
+  return value;
+}
 
 function publicSettings(settings: FactorySettings) {
   return {
@@ -127,35 +147,30 @@ export async function PATCH(request: Request) {
     }
 
     const merged = { ...current, ...patch };
+    wholeNumber(merged.vramBudgetMB, "Unified memory budget", 4_096, 131_072);
+    wholeNumber(merged.reserveMB, "Reserved memory", 1_024, 32_768);
     if (merged.reserveMB >= merged.vramBudgetMB) {
       throw new Error("Reserve memory must be smaller than the VRAM budget.");
     }
-    if (merged.maxConcurrentHeavy < 1 || merged.maxConcurrentHeavy > 4) {
-      throw new Error("Heavy model concurrency must be between 1 and 4.");
-    }
-    if (merged.maxConcurrentLight < 1 || merged.maxConcurrentLight > 4) {
-      throw new Error("Light model concurrency must be between 1 and 4.");
-    }
-    if (merged.guardrailThreshold < 0 || merged.guardrailThreshold > 100) {
-      throw new Error("Guardrail threshold must be between 0 and 100.");
-    }
-    if (merged.guardrailMaxRetries < 0 || merged.guardrailMaxRetries > 4) {
-      throw new Error("Guardrail corrective retries must be between 0 and 4.");
-    }
-    if (merged.deadLoopWindow < 3 || merged.deadLoopWindow > 12) {
-      throw new Error("Dead-loop trace window must be between 3 and 12 steps.");
-    }
-    if (merged.deadLoopThreshold < 2 || merged.deadLoopThreshold > 8) {
-      throw new Error("Dead-loop threshold must be between 2 and 8 identical transitions.");
-    }
-    if (merged.maxHealAttempts < 0 || merged.maxHealAttempts > 8) {
-      throw new Error("Self-heal attempts must be between 0 and 8.");
-    }
-    if (merged.commandTimeoutMs < 10_000 || merged.commandTimeoutMs > 900_000) {
-      throw new Error("Command timeout must be between 10 seconds and 15 minutes.");
-    }
-    if (merged.vramQueueTimeoutMs < 5_000) {
-      throw new Error("Queue timeout must be at least 5 seconds.");
+    wholeNumber(merged.maxConcurrentHeavy, "Heavy model concurrency", 1, 4);
+    wholeNumber(merged.maxConcurrentLight, "Light model concurrency", 1, 4);
+    wholeNumber(merged.vramQueueTimeoutMs, "Queue timeout", 5_000, 600_000);
+    wholeNumber(merged.maxHealAttempts, "Self-heal attempts", 0, 8);
+    wholeNumber(merged.commandTimeoutMs, "Command timeout", 10_000, 900_000);
+    wholeNumber(merged.maxHandoffDepth, "Max handoff depth", 0, 5);
+    wholeNumber(merged.guardrailThreshold, "Guardrail threshold", 0, 100);
+    wholeNumber(merged.guardrailMaxRetries, "Corrective retries", 0, 4);
+    wholeNumber(merged.deadLoopWindow, "Dead-loop trace window", 3, 12);
+    wholeNumber(merged.deadLoopThreshold, "Dead-loop threshold", 2, 8);
+    httpUrl(merged.ollamaUrl, "Ollama URL");
+    httpUrl(merged.lmstudioUrl, "LM Studio URL");
+    httpUrl(merged.opencodeUrl, "OpenCode URL");
+
+    if (merged.defaultAgentId) {
+      const agents = await listAgents();
+      const target = agents.find((agent) => agent.id === merged.defaultAgentId);
+      if (!target) throw new Error("The default agent no longer exists. Pick another agent.");
+      if (!target.enabled) throw new Error("The default agent is disabled. Enable it or pick another agent.");
     }
 
     const next = await updateSettings(patch);

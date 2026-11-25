@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Boxes, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, GitPullRequest, Loader2, Play, Plus, Pencil, RefreshCw, Rocket, Workflow, Wrench, XCircle } from "lucide-react";
+import { AlertTriangle, Boxes, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileCode2, GitBranch, GitCommitHorizontal, GitPullRequest, Loader2, Play, Plus, Pencil, RefreshCw, Rocket, RotateCcw, Workflow, Wrench, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useFactory } from "@/lib/data/store";
 import type { DeadLoopInfo, GuardrailResult, PhaseId, Run } from "@/lib/core/types";
@@ -36,7 +36,7 @@ export default function PipelinePage() {
   const [tab, setTab] = useState("kanban");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [filter, setFilter] = useState<"all" | "active" | "passed" | "failed">("all");
+  const [filter, setFilter] = useState<"all" | "active" | "paused" | "passed" | "failed">("all");
   const [expanded, setExpanded] = useState<PhaseId | null>("implementation");
   const [canvasOnly, setCanvasOnly] = useState(false);
   const [artifactEdit, setArtifactEdit] = useState<{ path: string; phaseId: PhaseId; content: string } | null>(null);
@@ -217,6 +217,11 @@ export default function PipelinePage() {
   const filteredRuns = useMemo(() => {
     if (filter === "all") return runs;
     if (filter === "active") return runs.filter((item) => ["running", "queued"].includes(item.status));
+    if (filter === "paused") {
+      return runs.filter(
+        (item) => item.status === "recoverable_paused" || item.status === "interrupted",
+      );
+    }
     return runs.filter((item) => item.status === filter);
   }, [runs, filter]);
 
@@ -226,6 +231,7 @@ export default function PipelinePage() {
   const commitCount = run?.git.commits.length ?? 0;
   const heals = phases.reduce((sum, phase) => sum + phase.healAttempts.length, 0);
   const running = run?.status === "running" || run?.status === "queued";
+  const paused = run?.status === "recoverable_paused" || run?.status === "interrupted";
 
   async function cancelRun() {
     if (!run) return;
@@ -238,6 +244,27 @@ export default function PipelinePage() {
       });
       if (!res.ok) throw new Error((await res.json()).error);
       toast.message("Cancellation requested.");
+      await fetchRuns();
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resumeRun() {
+    if (!run) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/runs/${run.id}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "resume" }),
+      });
+      const data = (await res.json()) as { run?: Run; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Could not resume this run.");
+      if (data.run) setRun(data.run);
+      toast.success("Run resumed from its last saved phase.");
       await fetchRuns();
     } catch (error) {
       toast.error(String(error));
@@ -358,8 +385,8 @@ export default function PipelinePage() {
                 <span className="eyebrow">Runs</span>
                 <Badge variant="outline">{runs.length}</Badge>
               </div>
-              <div className="flex gap-1">
-                {(["all", "active", "passed", "failed"] as const).map((value) => (
+              <div className="flex flex-wrap gap-1">
+                {(["all", "active", "paused", "passed", "failed"] as const).map((value) => (
                   <button
                     key={value}
                     onClick={() => setFilter(value)}
@@ -479,6 +506,11 @@ export default function PipelinePage() {
                       <Button variant="destructive" size="sm" onClick={cancelRun} disabled={busy}>
                         <XCircle className="h-3.5 w-3.5" />
                         Cancel
+                      </Button>
+                    ) : paused ? (
+                      <Button size="sm" onClick={resumeRun} disabled={busy}>
+                        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                        Resume
                       </Button>
                     ) : (
                       <>
@@ -603,7 +635,7 @@ export default function PipelinePage() {
                 <div className="flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-xs text-destructive">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <div>
-                    <div className="font-medium">Run failed</div>
+                    <div className="font-medium">{paused ? "Run paused" : "Run failed"}</div>
                     <div className="mt-0.5 font-mono text-xs leading-relaxed text-destructive/80">{run.error}</div>
                   </div>
                 </div>

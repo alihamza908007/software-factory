@@ -2,6 +2,7 @@ import { apiError, json } from "@/lib/core/api";
 import { listAgents, listMetrics, saveAgent } from "@/lib/data/db";
 import type { Agent } from "@/lib/core/types";
 import { AGENT_PALETTE } from "@/lib/core/constants";
+import { assertAgentFields } from "@/lib/data/agent-input";
 import { slugify, uid } from "@/lib/core/utils";
 
 export const runtime = "nodejs";
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
     if (!body.name?.trim()) throw new Error("Agent name is required.");
     if (!body.role?.trim()) throw new Error("Agent role is required.");
     if (!body.modelKey?.trim()) throw new Error("A model must be assigned.");
+    assertAgentFields(body);
     const existing = await listAgents();
     let handle = slugify(body.handle || body.name) || "agent";
     if (existing.some((agent) => agent.handle === handle)) {

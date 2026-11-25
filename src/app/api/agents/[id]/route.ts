@@ -2,6 +2,7 @@ import { apiError, json } from "@/lib/core/api";
 import { deleteAgent, getAgent, listAgents, listMetrics, saveAgent } from "@/lib/data/db";
 import type { Agent } from "@/lib/core/types";
 import { slugify } from "@/lib/core/utils";
+import { assertAgentFields } from "@/lib/data/agent-input";
 import { clearAgentMemory } from "@/lib/mesh/agent-memory";
 
 export const runtime = "nodejs";
@@ -31,6 +32,7 @@ export async function PATCH(
     const agent = await getAgent(id);
     if (!agent) return json({ error: "Agent not found." }, { status: 404 });
     const body = (await request.json()) as Partial<Agent>;
+    assertAgentFields(body);
     const requestedHandle = body.handle?.trim();
     let handle = agent.handle;
     if (requestedHandle && requestedHandle !== agent.handle) {
@@ -44,12 +46,30 @@ export async function PATCH(
     }
     const next: Agent = {
       ...agent,
-      ...body,
-      id: agent.id,
+      name: body.name !== undefined ? body.name.trim() : agent.name,
+      role: body.role !== undefined ? body.role.trim() : agent.role,
+      description:
+        body.description !== undefined && body.description.trim()
+          ? body.description.trim()
+          : agent.description,
+      capabilities: body.capabilities ?? agent.capabilities,
+      skills: body.skills ?? agent.skills,
+      systemPrompt:
+        body.systemPrompt !== undefined ? body.systemPrompt.trim() : agent.systemPrompt,
+      modelKey: body.modelKey !== undefined ? body.modelKey.trim() : agent.modelKey,
+      fallbackModelKey:
+        body.fallbackModelKey !== undefined
+          ? body.fallbackModelKey.trim()
+          : agent.fallbackModelKey,
+      temperature: body.temperature ?? agent.temperature,
+      maxTokens: body.maxTokens ?? agent.maxTokens,
+      allowConcurrency: body.allowConcurrency ?? agent.allowConcurrency,
+      enabled: body.enabled ?? agent.enabled,
+      color: body.color ?? agent.color,
+      icon: body.icon ?? agent.icon,
       handle,
       updatedAt: Date.now(),
     };
-    if (body.modelKey) next.modelKey = body.modelKey;
     await saveAgent(next);
     return json({ agent: next });
   } catch (error) {
