@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
+  AlertTriangle,
   Bot,
   DollarSign,
   Gauge,
@@ -73,6 +74,7 @@ export default function AgentsPage() {
     models,
     updateAgentLocal,
     fetchAgents,
+    fetchModels,
     patchModel,
     settings,
   } = useFactory();
@@ -86,6 +88,7 @@ export default function AgentsPage() {
   const [providerFilter, setProviderFilter] = useState("all");
   const [testingAgent, setTestingAgent] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [fixingModels, setFixingModels] = useState(false);
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("agent");
@@ -118,6 +121,13 @@ export default function AgentsPage() {
   }, [perfAgent]);
 
   const modelByKey = useMemo(() => new Map(models.map((model) => [model.key, model])), [models]);
+  const missingModelAgents = useMemo(
+    () =>
+      models.length
+        ? agents.filter((agent) => !modelByKey.has(agent.modelKey))
+        : [],
+    [agents, modelByKey, models.length],
+  );
   const metricsByAgent = useMemo(() => {
     const grouped = new Map<string, AgentMetric[]>();
     for (const metric of metrics) {
@@ -149,6 +159,41 @@ export default function AgentsPage() {
       Math.min(80, metrics.length)
     : 0;
   const totalCost = metrics.reduce((sum, metric) => sum + metric.costUsd, 0);
+
+  async function fixModels() {
+    setFixingModels(true);
+    try {
+      const res = await fetch("/api/agents/reconcile-models", { method: "POST" });
+      const data = (await res.json()) as {
+        updated?: Array<{ name: string; to: string }>;
+        unresolved?: Array<{ name: string }>;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error ?? "Could not remap agent models.");
+      await Promise.all([fetchAgents(), fetchModels(true)]);
+      if (data.updated?.length) {
+        toast.success(
+          `Remapped ${data.updated.length} agent${data.updated.length === 1 ? "" : "s"}`,
+          {
+            description: data.updated
+              .slice(0, 3)
+              .map((item) => `${item.name} → ${item.to}`)
+              .join(", "),
+          },
+        );
+      } else if (data.unresolved?.length) {
+        toast.warning("No models are available to remap to", {
+          description: "Start Ollama, LM Studio or OpenCode, then try again.",
+        });
+      } else {
+        toast.success("Every agent already points at an installed model.");
+      }
+    } catch (error) {
+      toast.error(String(error));
+    } finally {
+      setFixingModels(false);
+    }
+  }
 
   async function saveDraft() {
     if (!editing) return;
@@ -323,6 +368,27 @@ export default function AgentsPage() {
           </Button>
         </div>
       </div>
+
+      {missingModelAgents.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-start gap-3 rounded-lg border border-factory-amber/25 bg-factory-amber/5 px-3 py-2.5 text-xs text-factory-amber">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">
+              {missingModelAgents.length} agent{missingModelAgents.length === 1 ? "" : "s"} use
+              a model that is not installed
+            </div>
+            <div className="mt-0.5 text-factory-amber/80">
+              {missingModelAgents.slice(0, 3).map((agent) => `${agent.name} (${agent.modelKey})`).join(", ")}
+              {missingModelAgents.length > 3 ? ` and ${missingModelAgents.length - 3} more` : ""}.
+              Remap them to an available model before the next run.
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={fixModels} disabled={fixingModels}>
+            {fixingModels ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
+            Fix models
+          </Button>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative max-w-sm flex-1">

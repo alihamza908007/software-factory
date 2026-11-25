@@ -74,7 +74,9 @@ routing, and the data/state layer). All items from the first audit pass have now
 
 ## Remaining architectural work
 
+- API authentication is optional now: set `FACTORY_AUTH_TOKEN` before starting the server and
+  authenticate API calls with `Authorization: Bearer` or an HttpOnly cookie bootstrapped via
+  `/?token=…` (see `src/middleware.ts`); the unauthenticated local mode is unchanged, and
+  cross-site mutations are rejected.
 - A single unified endpoint for chat and mesh events (with server-side replay of chat turns
   across a full page reload) would require a durable event log, not just sequence ids.
-- API authentication remains intentionally out of scope: the app is pinned to `127.0.0.1` and
-  documented as a local trust boundary rather than a multi-user service.

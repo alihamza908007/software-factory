@@ -30,7 +30,10 @@ function freshDb(): FactoryDb {
   const now = Date.now();
   return {
     version: DB_VERSION,
-    agents: defaultAgents("ollama/qwen3.8:27b-mlx", "ollama/gpt-oss:20b"),
+    // Cloud models resolve through OpenCode and are always in the catalogue;
+    // a hard-coded local tag would break the first run on machines that do not
+    // have that exact model pulled.
+    agents: defaultAgents("opencode/deepseek-v4.1-flash-free", "opencode/glm-5.3-flash-free"),
     projects: [],
     runs: [],
     metrics: [],

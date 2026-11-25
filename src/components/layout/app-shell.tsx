@@ -87,6 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const knownResponseEvents = useRef<Set<string> | null>(null);
 
   useEffect(() => {
+    if (pathname === "/unlock") return;
     void refreshAll();
     connectMesh();
     const interval = setInterval(() => void fetchRuns(), 7000);
@@ -122,6 +123,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [meshConnected, meshEvents, pathname]);
 
   useEffect(() => {
+    if (pathname === "/unlock") return;
     if (!modelsLoaded) void fetchModels();
     const discovery = setInterval(() => {
       if (document.visibilityState === "visible") void fetchModels(true);
@@ -232,6 +234,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+
+  if (pathname === "/unlock") return <>{children}</>;
 
   return (
     <div className="min-h-screen bg-background">

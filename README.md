@@ -35,9 +35,10 @@ opencode auth login             # enables the free cloud tier via the OpenCode C
 
 ## Local trust model
 
-The server is local-first: `npm run dev` binds to `127.0.0.1` and all state lives under `.data/` (agents, projects, runs, workspaces).
+The server is local-first: `npm run dev` and `npm start` bind to `127.0.0.1` and all state lives under `.data/` (agents, projects, runs, workspaces).
 
-- **No authentication.** The HTTP API is not authenticated, so anything able to reach the server can read or write project files, launch runs, and change settings. Keep it on localhost or firewall it.
+- **Optional API token.** By default the HTTP API is not authenticated: anything able to reach the server can read or write project files, launch runs, and change settings. Keep it on localhost or firewall it. To add a token, set `FACTORY_AUTH_TOKEN` before starting the server, open `http://127.0.0.1:3000/?token=<token>` once (it sets an HttpOnly cookie), or send `Authorization: Bearer <token>` / `x-factory-token` on API calls. Page loads without a valid token go through `/unlock`.
+- **Cross-site mutations are blocked.** Mutating API calls with an `Origin` that differs from the request host (or a `Sec-Fetch-Site: cross-site` marker) are rejected with 403, so a random website cannot drive the factory from your browser.
 - **Data leaves the machine only when you turn it on.** Cloud models may be used as routing targets or fallbacks, and the optional GitHub integration can push branches and open PRs.
 
 ## Getting started
